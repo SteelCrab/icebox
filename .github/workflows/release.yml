@@ -1,0 +1,87 @@
+# Release automation for Icebox
+#
+# Trigger: push a version tag (e.g. `git tag -a v0.2.0 -m "v0.2.0" && git push origin v0.2.0`)
+#
+# What it does:
+#   1. Build release binary (macOS ARM64)
+#   2. Create GitHub Release with the binary attached
+#   3. Update SteelCrab/homebrew-tap formula (version + url + sha256)
+#
+# Requirements:
+#   - Repository secret `TAP_GITHUB_TOKEN`: a personal access token with `repo` scope
+#     for pushing to SteelCrab/homebrew-tap
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: macos-14  # Apple Silicon (M1/M2) runner
+    steps:
+      # --- Build ---
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binary
+        run: cargo build --release
+
+      # --- GitHub Release ---
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Compute SHA256
+        id: sha
+        run: |
+          SHA=$(shasum -a 256 target/release/icebox | awk '{print $1}')
+          echo "SHA256=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "${{ github.ref_name }}"
+          generate_release_notes: true
+          files: target/release/icebox#icebox-darwin-arm64
+
+      # --- Update Homebrew tap ---
+      - name: Checkout homebrew-tap
+        uses: actions/checkout@v4
+        with:
+          repository: SteelCrab/homebrew-tap
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+          path: homebrew-tap
+
+      - name: Update formula
+        run: |
+          cd homebrew-tap
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          SHA="${{ steps.sha.outputs.SHA256 }}"
+          TAG="${{ github.ref_name }}"
+
+          # Update version
+          sed -i '' "s/version \".*\"/version \"${VERSION}\"/" Formula/icebox.rb
+
+          # Update download URL
+          sed -i '' "s|releases/download/v[^/]*/|releases/download/${TAG}/|" Formula/icebox.rb
+
+          # Update SHA256
+          sed -i '' "s/sha256 \".*\"/sha256 \"${SHA}\"/" Formula/icebox.rb
+
+      - name: Push formula update
+        run: |
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/icebox.rb
+          git commit -m "Update icebox to ${{ github.ref_name }}"
+          git push

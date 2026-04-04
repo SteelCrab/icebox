@@ -23,21 +23,29 @@ A terminal-based kanban board built with Rust, featuring an integrated AI assist
 
 ## Installation
 
-### Easy Install (cargo install)
+### Download Binary (recommended)
+
+Download the latest release from [GitHub Releases](https://github.com/SteelCrab/icebox/releases/latest):
+
+```bash
+# macOS (Apple Silicon)
+curl -LO https://github.com/SteelCrab/icebox/releases/latest/download/icebox-darwin-arm64
+chmod +x icebox-darwin-arm64
+mv icebox-darwin-arm64 ~/.cargo/bin/icebox
+```
+
+### From Source (cargo install)
 
 ```bash
 cargo install --git https://github.com/SteelCrab/icebox.git
 ```
 
-### Manual (from source)
+### Build from Source
 
 ```bash
 git clone https://github.com/SteelCrab/icebox.git
 cd icebox
 cargo build --release
-```
-
-```bash
 cp target/release/icebox ~/.cargo/bin/
 ```
 

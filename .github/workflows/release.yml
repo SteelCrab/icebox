@@ -51,7 +51,7 @@ jobs:
         with:
           name: "${{ github.ref_name }}"
           generate_release_notes: true
-          files: target/release/icebox#icebox-darwin-arm64
+          files: target/release/icebox
 
       # --- Update Homebrew tap ---
       - name: Checkout homebrew-tap

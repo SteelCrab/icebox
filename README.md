@@ -23,7 +23,13 @@ A terminal-based kanban board built with Rust, featuring an integrated AI assist
 
 ## Installation
 
-### Homebrew (recommended)
+### Quick Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SteelCrab/icebox/main/install.sh | bash
+```
+
+### Homebrew
 
 ```bash
 brew tap SteelCrab/tap

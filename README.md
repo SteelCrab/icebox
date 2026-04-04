@@ -2,7 +2,7 @@
 
 **Rust TUI Kanban Board with AI Sidebar**
 
-[English](README.md) | [한국어](README.ko.md)
+[English](README.md) | [한국어](README.ko.md) | [日本語](README.ja.md) | [中文](README.zh.md) | [Español](README.es.md)
 
 A terminal-based kanban board built with Rust, featuring an integrated AI assistant powered by the Anthropic API. Manage tasks with vim-style keybindings, chat with AI per task, and let the AI interact with your board and filesystem through built-in tools.
 
@@ -11,27 +11,27 @@ A terminal-based kanban board built with Rust, featuring an integrated AI assist
 ### 01. Install & Launch
 > Install with Homebrew and open the board with a single command.
 
-<video src="https://github.com/SteelCrab/icebox/raw/main/videos/icebox-install.mp4" autoplay loop muted playsinline width="100%"></video>
+![Install & Launch](videos/icebox-install.gif)
 
 ### 02. Kanban & Task Detail
 > Manage tasks across 5 columns and view details in the sidebar.
 
-<video src="https://github.com/SteelCrab/icebox/raw/main/videos/icebox-kanban.mp4" autoplay loop muted playsinline width="100%"></video>
+![Kanban & Task Detail](videos/icebox-kanban.gif)
 
 ### 03. Create Task
 > Press `n` to enter title, tags, and priority — added to the board instantly.
 
-<video src="https://github.com/SteelCrab/icebox/raw/main/videos/icebox-new-task.mp4" autoplay loop muted playsinline width="100%"></video>
+![Create Task](videos/icebox-new-task.gif)
 
 ### 04. AI Sidebar
 > Each task has an isolated AI session for conversation and tool execution.
 
-<video src="https://github.com/SteelCrab/icebox/raw/main/videos/icebox-ai-sidebar.mp4" autoplay loop muted playsinline width="100%"></video>
+![AI Sidebar](videos/icebox-ai-sidebar.gif)
 
 ### 05. AI Task Creation
 > Create tasks through the bottom AI chat and reflect them on the board.
 
-<video src="https://github.com/SteelCrab/icebox/raw/main/videos/icebox-ai-task.mp4" autoplay loop muted playsinline width="100%"></video>
+![AI Task Creation](videos/icebox-ai-task.gif)
 
 ## Features
 

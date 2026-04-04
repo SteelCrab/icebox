@@ -6,6 +6,33 @@
 
 Rust로 만든 터미널 기반 칸반보드로, Anthropic API를 활용한 AI 어시스턴트가 통합되어 있습니다. Vim 스타일 키바인딩으로 태스크를 관리하고, 태스크별 AI 채팅으로 대화하며, AI가 보드와 파일시스템을 직접 조작할 수 있습니다.
 
+## 데모
+
+### 01. 설치부터 실행까지
+> Homebrew로 설치하고 icebox 한 줄이면 보드가 열립니다.
+
+<video src="https://github.com/SteelCrab/icebox/raw/main/videos/icebox-install.mp4" autoplay loop muted playsinline width="100%"></video>
+
+### 02. 칸반보드와 태스크 상세
+> 5단계 컬럼에서 태스크를 관리하고, 사이드바에서 상세 내용을 확인합니다.
+
+<video src="https://github.com/SteelCrab/icebox/raw/main/videos/icebox-kanban.mp4" autoplay loop muted playsinline width="100%"></video>
+
+### 03. 태스크 생성
+> `n` 키 하나로 제목, 태그, 우선순위를 입력하고 바로 보드에 추가합니다.
+
+<video src="https://github.com/SteelCrab/icebox/raw/main/videos/icebox-new-task.mp4" autoplay loop muted playsinline width="100%"></video>
+
+### 04. AI 사이드바
+> 태스크마다 독립된 AI 세션으로 대화하고, 도구를 실행합니다.
+
+<video src="https://github.com/SteelCrab/icebox/raw/main/videos/icebox-ai-sidebar.mp4" autoplay loop muted playsinline width="100%"></video>
+
+### 05. AI로 태스크 생성
+> 하단 AI 채팅창에서 대화로 태스크를 만들고 보드에 바로 반영합니다.
+
+<video src="https://github.com/SteelCrab/icebox/raw/main/videos/icebox-ai-task.mp4" autoplay loop muted playsinline width="100%"></video>
+
 ## 주요 기능
 
 - **5컬럼 칸반보드** — Icebox, Emergency, In Progress, Testing, Complete

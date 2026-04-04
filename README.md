@@ -6,6 +6,33 @@
 
 A terminal-based kanban board built with Rust, featuring an integrated AI assistant powered by the Anthropic API. Manage tasks with vim-style keybindings, chat with AI per task, and let the AI interact with your board and filesystem through built-in tools.
 
+## Demo
+
+### 01. Install & Launch
+> Install with Homebrew and open the board with a single command.
+
+<video src="https://github.com/SteelCrab/icebox/raw/main/videos/icebox-install.mp4" autoplay loop muted playsinline width="100%"></video>
+
+### 02. Kanban & Task Detail
+> Manage tasks across 5 columns and view details in the sidebar.
+
+<video src="https://github.com/SteelCrab/icebox/raw/main/videos/icebox-kanban.mp4" autoplay loop muted playsinline width="100%"></video>
+
+### 03. Create Task
+> Press `n` to enter title, tags, and priority — added to the board instantly.
+
+<video src="https://github.com/SteelCrab/icebox/raw/main/videos/icebox-new-task.mp4" autoplay loop muted playsinline width="100%"></video>
+
+### 04. AI Sidebar
+> Each task has an isolated AI session for conversation and tool execution.
+
+<video src="https://github.com/SteelCrab/icebox/raw/main/videos/icebox-ai-sidebar.mp4" autoplay loop muted playsinline width="100%"></video>
+
+### 05. AI Task Creation
+> Create tasks through the bottom AI chat and reflect them on the board.
+
+<video src="https://github.com/SteelCrab/icebox/raw/main/videos/icebox-ai-task.mp4" autoplay loop muted playsinline width="100%"></video>
+
 ## Features
 
 - **5-Column Kanban Board** — Icebox, Emergency, In Progress, Testing, Complete

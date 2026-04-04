@@ -383,7 +383,7 @@ fn execute_list_tasks(store: &Arc<Mutex<TaskStore>>) -> Result<String> {
                 for task in col_tasks {
                     output.push_str(&format!(
                         "- [{}] {} ({}) {}\n",
-                        task.id.chars().take(8).collect::<String>(),
+                        task.id,
                         task.title,
                         task.priority.label(),
                         if task.tags.is_empty() {

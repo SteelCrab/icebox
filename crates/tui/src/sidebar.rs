@@ -423,19 +423,68 @@ fn render_task_detail<'a>(task: &'a Task, width: u16, lines: &mut Vec<Line<'a>>)
     )]));
     lines.push(Line::from(""));
 
-    for body_line in task.body.lines() {
-        lines.push(Line::from(body_line.to_string()));
+    // Render body, stripping sections whose content is only link references
+    // (these are rendered as Notion-style icon blocks below)
+    let body_lines: Vec<&str> = task.body.lines().collect();
+    let mut i = 0;
+    while i < body_lines.len() {
+        let trimmed = body_lines[i].trim().to_lowercase();
+        // Detect ## header that might be a references section
+        if trimmed.starts_with("## ") {
+            // Look ahead: if all non-empty lines are link patterns, skip the section
+            let section_start = i;
+            i += 1;
+            let mut all_links = true;
+            let mut has_content = false;
+            while i < body_lines.len() {
+                let lt = body_lines[i].trim();
+                if lt.is_empty() {
+                    i += 1;
+                    continue;
+                }
+                // Next ## header — stop
+                if lt.starts_with("## ") {
+                    break;
+                }
+                has_content = true;
+                let ll = lt.to_lowercase();
+                let is_link_line = ll.starts_with("- commit:")
+                    || ll.starts_with("- branch:")
+                    || ll.starts_with("- pr")
+                    || ll.starts_with("- issue")
+                    || ll.starts_with("- #")
+                    || ll.starts_with("- http")
+                    || ll.starts_with("commit:")
+                    || ll.starts_with("branch:")
+                    || ll.starts_with("pr#")
+                    || ll.starts_with("pr ")
+                    || ll.starts_with("issue#")
+                    || ll.starts_with("issue ")
+                    || ll.starts_with('#') && ll.len() > 1 && ll.as_bytes().get(1).is_some_and(|b| b.is_ascii_digit());
+                if !is_link_line {
+                    all_links = false;
+                    break;
+                }
+                i += 1;
+            }
+            if all_links && has_content {
+                // Skip entire section — link blocks will render it
+                continue;
+            }
+            // Not a link section — render it normally
+            for line in &body_lines[section_start..i] {
+                lines.push(Line::from((*line).to_string()));
+            }
+            continue;
+        }
+        lines.push(Line::from(body_lines[i].to_string()));
+        i += 1;
     }
 
-    // Render link blocks (Notion-style)
+    // Render link blocks (Notion-style icons)
     let parsed_links = icebox_task::links::parse_links(&task.body);
     if !parsed_links.is_empty() {
         lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(
-            "── References ──",
-            theme::dim_style(),
-        )));
-
         for link in &parsed_links {
             let block_line = render_link_block(link);
             lines.push(block_line);

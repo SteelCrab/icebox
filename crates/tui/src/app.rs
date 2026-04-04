@@ -79,6 +79,7 @@ pub struct App {
     pub pending_tool_approval: Option<PendingToolApproval>,
     pub workspace_name: String,
     pub workspace_path: std::path::PathBuf,
+    pub git_branch: Option<String>,
     pub sidebar_rect: Option<Rect>,
 
     // Edit task state
@@ -215,6 +216,15 @@ impl App {
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| workspace.display().to_string());
+        let git_branch = std::process::Command::new("git")
+            .args(["branch", "--show-current"])
+            .current_dir(workspace)
+            .output()
+            .ok()
+            .and_then(|o| {
+                let branch = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                if branch.is_empty() { None } else { Some(branch) }
+            });
         Ok(Self {
             mode: AppMode::Board,
             board: BoardState::new(tasks),
@@ -231,6 +241,7 @@ impl App {
             pending_tool_approval: None,
             workspace_name,
             workspace_path: workspace.to_path_buf(),
+            git_branch,
             sidebar_rect: None,
             edit_title: String::new(),
             edit_body: String::new(),
@@ -569,7 +580,7 @@ impl App {
     }
 
     fn render_header(&self, layout: &AppLayout, frame: &mut Frame) {
-        let header = Line::from(vec![
+        let mut header_spans = vec![
             Span::styled(
                 concat!(" ICEBOX v", env!("CARGO_PKG_VERSION"), " "),
                 Style::default()
@@ -591,7 +602,20 @@ impl App {
                 ),
                 theme::dim_style(),
             ),
-        ]);
+        ];
+        if let Some(branch) = &self.git_branch {
+            header_spans.push(Span::styled(
+                "  ",
+                Style::default().fg(ratatui::style::Color::DarkGray),
+            ));
+            header_spans.push(Span::styled(
+                branch.clone(),
+                Style::default()
+                    .fg(ratatui::style::Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+        let header = Line::from(header_spans);
         frame.render_widget(Paragraph::new(header), layout.header);
 
         // Tab bar

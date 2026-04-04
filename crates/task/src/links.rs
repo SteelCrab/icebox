@@ -156,6 +156,36 @@ fn parse_line_links(line: &str, links: &mut Vec<TaskLink>) {
         links,
     );
 
+    // Bare #123 (standalone issue reference, e.g. "- #19")
+    // Skip if the line already has a known prefix (PR#, issue#, Issue#, etc.)
+    let line_upper = trimmed.to_uppercase();
+    let has_known_prefix = line_upper.contains("PR #")
+        || line_upper.contains("PR#")
+        || line_upper.contains("ISSUE #")
+        || line_upper.contains("ISSUE#");
+    if !has_known_prefix {
+        for word in trimmed.split_whitespace() {
+            let w = word.trim_start_matches('-').trim();
+            if let Some(num) = w.strip_prefix('#')
+                && !num.is_empty()
+                && num.chars().all(|c| c.is_ascii_digit())
+                && !w.contains('/')
+            {
+                // Check by label to avoid duplicates from numbered ref parsers
+                let label = format!("#{num}");
+                let already = links.iter().any(|l| l.label == label);
+                if !already {
+                    links.push(TaskLink {
+                        kind: LinkKind::Issue,
+                        label,
+                        url: None,
+                        raw: w.to_string(),
+                    });
+                }
+            }
+        }
+    }
+
     // owner/repo#123 (GitHub shorthand)
     for word in trimmed.split_whitespace() {
         if let Some((repo_part, num_part)) = word.split_once('#')

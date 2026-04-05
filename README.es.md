@@ -39,10 +39,11 @@ Un tablero kanban basado en terminal construido con Rust, con un asistente AI in
 - **Barra lateral AI** — Conversaciones AI por tarea + respuestas en streaming
 - **Sesiones por tarea** — Cada tarea mantiene su historial AI independiente, guardado en disco
 - **Herramientas integradas** — AI puede ejecutar comandos, leer/escribir archivos, buscar código, crear/actualizar tareas
-- **Comandos slash** — 17 comandos para gestión del tablero, control AI y autenticación
+- **Comandos slash** — 18 comandos para gestión del tablero, control AI y autenticación
 - **OAuth PKCE** — Login via claude.ai con flujo de navegador
 - **Soporte de ratón** — Clic para seleccionar, arrastrar para desplazar, clic para enfocar
 - **Selección de texto** — Arrastra para seleccionar y copiar respuestas AI
+- **Swimlanes** — Filtrado por swimlane basado en pestañas, navegación con `[`/`]`
 - **Enlaces estilo Notion** — Auto-detección de commit, PR, issue y branch
 - **Fechas de tarea** — Fecha de inicio y fecha límite por tarea
 - **Memoria AI** — Memoria de contexto persistente entre sesiones
@@ -128,11 +129,13 @@ icebox whoami          # Verificar estado de autenticación
 | `n` | Crear nueva tarea |
 | `d` | Eliminar tarea (confirmar con y/Enter) |
 | `>/<` | Mover tarea a columna siguiente/anterior |
+| `[/]` | Cambiar pestaña swimlane |
 | `/` | Alternar panel de chat AI inferior |
 | `1/2` | Cambiar pestaña (Board / Memory) |
 | `r` | Refrescar |
 | `q`, `Ctrl+C` | Salir |
 | Clic del ratón | Seleccionar tarea + abrir detalle |
+| Clic del ratón (barra swimlane) | Cambiar swimlane |
 | Scroll del ratón | Navegación |
 
 ### Modo Detail (Barra lateral)
@@ -175,6 +178,7 @@ icebox whoami          # Verificar estado de autenticación
 | | `/search <query>` | Buscar tareas |
 | | `/export` | Exportar tablero como Markdown |
 | | `/diff` | Git diff |
+| | `/swimlane [name \| clear]` | Configurar swimlane/listar |
 | **AI** | `/help` | Lista de comandos |
 | | `/status` | Estado de sesión |
 | | `/cost` | Uso de tokens |
@@ -198,6 +202,7 @@ title: "Título de la tarea"
 column: inprogress    # icebox | emergency | inprogress | testing | complete
 priority: high        # low | medium | high | critical
 tags: ["backend", "auth"]
+swimlane: "backend"
 start_date: "2026-04-01T00:00:00Z"
 due_date: "2026-04-10T00:00:00Z"
 created_at: "ISO8601"
@@ -237,7 +242,7 @@ crates/
   api/          # API — AnthropicClient, streaming SSE, AuthMethod, reintentos
   runtime/      # Runtime — ConversationRuntime, Session, OAuth PKCE, UsageTracker
   tools/        # 12 herramientas — bash, read/write_file, glob/grep_search, kanban (list/create/update/move), memoria
-  commands/     # 17 comandos slash (Board, AI, Auth, Session)
+  commands/     # 18 comandos slash (Board, AI, Auth, Session)
 ```
 
 ## Herramientas AI integradas
@@ -251,7 +256,7 @@ crates/
 | `grep_search` | Buscar contenido con expresiones regulares |
 | `list_tasks` | Listar tareas del kanban |
 | `create_task` | Crear nueva tarea |
-| `update_task` | Actualizar tarea existente (título, prioridad, etiquetas, fechas, cuerpo) |
+| `update_task` | Actualizar tarea existente (título, prioridad, etiquetas, swimlane, fechas, cuerpo) |
 | `move_task` | Mover tarea entre columnas |
 | `save_memory` | Guardar memoria de contexto AI |
 | `list_memories` | Listar memorias guardadas |

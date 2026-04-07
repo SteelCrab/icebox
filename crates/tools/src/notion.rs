@@ -85,8 +85,8 @@ impl NotionClient {
                 .filter(|k| !k.is_empty())
                 .map(String::from)
                 .context(
-                    "NOTION_API_KEY 환경변수를 설정해주세요\n\
-                     https://www.notion.so/my-integrations 에서 생성할 수 있습니다",
+                    "NOTION_API_KEY is not set.\n\
+                     Create one at https://www.notion.so/my-integrations",
                 )?,
         };
         Ok(Self::new(api_key))
@@ -134,6 +134,38 @@ impl NotionClient {
     /// Send a PATCH request to the Notion API.
     fn patch(&self, path: &str, body: &Value) -> Result<Value> {
         self.request(Method::Patch, path, body)
+    }
+
+    /// Verify the API key by calling GET `/users/me`.
+    ///
+    /// Returns `Ok(bot_name)` on success, or an error if authentication fails.
+    pub fn verify_key(&self) -> Result<String> {
+        let url = format!("{NOTION_API_BASE}/users/me");
+        let resp = self
+            .http
+            .get(&url)
+            .bearer_auth(&self.api_key)
+            .header("Notion-Version", NOTION_VERSION)
+            .send()
+            .context("Notion API request failed")?;
+
+        let status = resp.status();
+        let body: Value = resp.json().context("Failed to parse Notion response")?;
+
+        if !status.is_success() {
+            let message = body
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown error");
+            anyhow::bail!("API key invalid ({status}): {message}");
+        }
+
+        let name = body
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_owned();
+        Ok(name)
     }
 
     /// Search the Notion workspace for pages matching a query string.
@@ -262,6 +294,86 @@ impl NotionClient {
         let body = json!({ "properties": build_properties(task)? });
         self.patch(&format!("/pages/{page_id}"), &body)?;
         Ok(())
+    }
+
+    /// Fetch all block children of a page and convert them back to markdown.
+    fn fetch_page_body(&self, page_id: &str) -> Result<String> {
+        let mut lines = Vec::new();
+        let mut start_cursor: Option<String> = None;
+
+        loop {
+            let path = match &start_cursor {
+                Some(c) => format!("/blocks/{page_id}/children?page_size=100&start_cursor={c}"),
+                None => format!("/blocks/{page_id}/children?page_size=100"),
+            };
+            let url = format!("{NOTION_API_BASE}{path}");
+            let resp = self
+                .http
+                .get(&url)
+                .bearer_auth(&self.api_key)
+                .header("Notion-Version", NOTION_VERSION)
+                .send()
+                .context("Notion API request failed")?;
+            let status = resp.status();
+            let body: Value = resp.json().context("Failed to parse Notion response")?;
+            if !status.is_success() {
+                let message = body
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown error");
+                anyhow::bail!("Notion API error ({status}): {message}");
+            }
+
+            if let Some(results) = body.get("results").and_then(Value::as_array) {
+                for block in results {
+                    if let Some(line) = block_to_markdown(block) {
+                        lines.push(line);
+                    }
+                }
+            }
+
+            let has_more = body
+                .get("has_more")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            if !has_more {
+                break;
+            }
+            start_cursor = body
+                .get("next_cursor")
+                .and_then(Value::as_str)
+                .map(String::from);
+        }
+        Ok(lines.join("\n"))
+    }
+
+    /// Pull all tasks from the Notion database.
+    ///
+    /// Returns a vector of `(Task, last_edited_time)` tuples. Tasks without
+    /// a parseable `Task ID` property are skipped.
+    ///
+    /// # Errors
+    /// Returns an error if the database query fails.
+    pub fn pull_tasks(&self, database_id: &str) -> Result<Vec<(Task, String)>> {
+        let pages = self.query_all_pages(database_id)?;
+        let mut tasks = Vec::new();
+        for page in &pages {
+            let Some(page_id) = page.get("id").and_then(Value::as_str) else {
+                continue;
+            };
+            let Some(mut task) = page_to_task(page) else {
+                continue;
+            };
+            // Fetch body blocks
+            task.body = self.fetch_page_body(page_id).unwrap_or_default();
+            let last_edited = page
+                .get("last_edited_time")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned();
+            tasks.push((task, last_edited));
+        }
+        Ok(tasks)
     }
 
     /// Sync all tasks to a Notion database, creating or updating as needed.
@@ -470,6 +582,186 @@ fn rich_text_block(block_type: &str, content: &str) -> Value {
         block_type: {
             "rich_text": [{ "type": "text", "text": { "content": content } }]
         }
+    })
+}
+
+/// Extract plain text from a Notion block's `rich_text` array.
+fn block_rich_text(block: &Value, block_type: &str) -> String {
+    block
+        .get(block_type)
+        .and_then(|b| b.get("rich_text"))
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|t| t.get("plain_text").and_then(Value::as_str))
+                .collect::<String>()
+        })
+        .unwrap_or_default()
+}
+
+/// Convert a Notion block back to a markdown line.
+///
+/// Supports `paragraph`, `heading_1/2/3`, and `bulleted_list_item`.
+/// Returns `None` for unsupported block types.
+fn block_to_markdown(block: &Value) -> Option<String> {
+    let block_type = block.get("type").and_then(Value::as_str)?;
+    match block_type {
+        "paragraph" => Some(block_rich_text(block, "paragraph")),
+        "heading_1" => Some(format!("# {}", block_rich_text(block, "heading_1"))),
+        "heading_2" => Some(format!("## {}", block_rich_text(block, "heading_2"))),
+        "heading_3" => Some(format!("### {}", block_rich_text(block, "heading_3"))),
+        "bulleted_list_item" => Some(format!(
+            "- {}",
+            block_rich_text(block, "bulleted_list_item")
+        )),
+        _ => None,
+    }
+}
+
+/// Extract a plain-text rich_text property from a page.
+fn extract_rich_text_property(page: &Value, prop: &str) -> Option<String> {
+    let arr = page.get("properties")?.get(prop)?.get("rich_text")?.as_array()?;
+    let s: String = arr
+        .iter()
+        .filter_map(|t| t.get("plain_text").and_then(Value::as_str))
+        .collect();
+    if s.is_empty() { None } else { Some(s) }
+}
+
+/// Extract a title property (`Name`) as plain text.
+fn extract_name_property(page: &Value) -> Option<String> {
+    let arr = page
+        .get("properties")?
+        .get("Name")?
+        .get("title")?
+        .as_array()?;
+    let s: String = arr
+        .iter()
+        .filter_map(|t| t.get("plain_text").and_then(Value::as_str))
+        .collect();
+    if s.is_empty() { None } else { Some(s) }
+}
+
+/// Extract a `select` property's name.
+fn extract_select_property(page: &Value, prop: &str) -> Option<String> {
+    page.get("properties")?
+        .get(prop)?
+        .get("select")?
+        .get("name")?
+        .as_str()
+        .map(String::from)
+}
+
+/// Extract a `multi_select` property as a list of names.
+fn extract_multi_select_property(page: &Value, prop: &str) -> Vec<String> {
+    page.get("properties")
+        .and_then(|p| p.get(prop))
+        .and_then(|p| p.get("multi_select"))
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.get("name").and_then(Value::as_str).map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Extract a `date` property's start datetime.
+fn extract_date_property(page: &Value, prop: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    let s = page
+        .get("properties")?
+        .get(prop)?
+        .get("date")?
+        .get("start")?
+        .as_str()?;
+    chrono::DateTime::parse_from_rfc3339(s)
+        .ok()
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+}
+
+/// Parse Notion Status select name → `Column`.
+fn notion_to_column(name: &str) -> Column {
+    match name {
+        "Emergency" => Column::Emergency,
+        "In Progress" => Column::InProgress,
+        "Testing" => Column::Testing,
+        "Complete" => Column::Complete,
+        _ => Column::Icebox,
+    }
+}
+
+/// Parse Notion Priority select name → `Priority`.
+fn notion_to_priority(name: &str) -> Priority {
+    match name {
+        "Critical" => Priority::Critical,
+        "High" => Priority::High,
+        "Low" => Priority::Low,
+        _ => Priority::Medium,
+    }
+}
+
+/// Convert a Notion page (from DB query) into an icebox `Task`.
+///
+/// Returns `None` if the page is missing a `Task ID` property.
+/// Body content is NOT populated here; call `fetch_page_body` separately.
+fn page_to_task(page: &Value) -> Option<Task> {
+    let id = extract_task_id_property(page)?;
+    let title = extract_name_property(page).unwrap_or_else(|| "(Untitled)".into());
+    let column = extract_select_property(page, "Status")
+        .map(|s| notion_to_column(&s))
+        .unwrap_or(Column::Icebox);
+    let priority = extract_select_property(page, "Priority")
+        .map(|s| notion_to_priority(&s))
+        .unwrap_or(Priority::Medium);
+    let tags = extract_multi_select_property(page, "Tags");
+    let start_date = extract_date_property(page, "Start Date");
+    let due_date = extract_date_property(page, "Due Date");
+
+    // Progress: stored as rich_text like "3/10"
+    let progress = extract_rich_text_property(page, "Progress").and_then(|s| {
+        let (done, total) = s.split_once('/')?;
+        Some(icebox_task::model::Progress {
+            done: done.trim().parse().ok()?,
+            total: total.trim().parse().ok()?,
+        })
+    });
+
+    let created_at = extract_date_property(page, "Created At")
+        .or_else(|| {
+            page.get("created_time")
+                .and_then(Value::as_str)
+                .and_then(|s| {
+                    chrono::DateTime::parse_from_rfc3339(s)
+                        .ok()
+                        .map(|dt| dt.with_timezone(&chrono::Utc))
+                })
+        })
+        .unwrap_or_else(chrono::Utc::now);
+    let updated_at = extract_date_property(page, "Updated At")
+        .or_else(|| {
+            page.get("last_edited_time")
+                .and_then(Value::as_str)
+                .and_then(|s| {
+                    chrono::DateTime::parse_from_rfc3339(s)
+                        .ok()
+                        .map(|dt| dt.with_timezone(&chrono::Utc))
+                })
+        })
+        .unwrap_or_else(chrono::Utc::now);
+
+    Some(Task {
+        id,
+        title,
+        column,
+        priority,
+        tags,
+        depends_on: Vec::new(),
+        start_date,
+        due_date,
+        progress,
+        created_at,
+        updated_at,
+        body: String::new(),
     })
 }
 

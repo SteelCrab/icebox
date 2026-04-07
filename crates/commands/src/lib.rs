@@ -98,8 +98,8 @@ pub const COMMANDS: &[SlashCommandSpec] = &[
     SlashCommandSpec {
         name: "notion",
         aliases: &[],
-        summary: "Sync tasks to Notion database",
-        argument_hint: Some("[push|status|reset]"),
+        summary: "Sync tasks with Notion database",
+        argument_hint: Some("[push|pull|status|reset]"),
         category: CommandCategory::Board,
     },
     // AI

@@ -79,6 +79,27 @@ cargo build --release
 cp target/release/icebox ~/.cargo/bin/
 ```
 
+### 사전 빌드된 바이너리 (수동)
+
+`install.sh`를 사용할 수 없는 환경에서는 [최신 릴리즈](https://github.com/SteelCrab/icebox/releases/latest)에서
+플랫폼에 맞는 바이너리를 직접 다운로드하세요:
+
+| 플랫폼 | 아키텍쳐 | 파일 |
+|---|---|---|
+| macOS | Apple Silicon (arm64) | `icebox-aarch64-apple-darwin.tar.gz` |
+| macOS | Intel (x86_64) | `icebox-x86_64-apple-darwin.tar.gz` |
+| Linux | x86_64 (glibc) | `icebox-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux | x86_64 (musl / Alpine) | `icebox-x86_64-unknown-linux-musl.tar.gz` |
+| Linux | aarch64 (glibc) | `icebox-aarch64-unknown-linux-gnu.tar.gz` |
+| Linux | aarch64 (musl / Alpine) | `icebox-aarch64-unknown-linux-musl.tar.gz` |
+| Linux | armv7 (Raspberry Pi 2/3) | `icebox-armv7-unknown-linux-gnueabihf.tar.gz` |
+
+```bash
+tar -xzf icebox-<target>.tar.gz
+chmod +x icebox
+mv icebox ~/.local/bin/    # 또는 $PATH 안의 다른 디렉토리
+```
+
 ## 빠른 시작
 
 ### 사전 요구사항

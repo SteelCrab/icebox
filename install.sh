@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # Icebox installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/SteelCrab/icebox/main/install.sh | bash
+#
+# Supports:
+#   - macOS (aarch64, x86_64)
+#   - Linux glibc (x86_64, aarch64)
+#   - Linux musl  (x86_64, aarch64)
+#   - Linux armv7 (Raspberry Pi 2/3)
+#
+# Override install location: ICEBOX_INSTALL_DIR=/path bash
 set -euo pipefail
 
 REPO="SteelCrab/icebox"
@@ -9,44 +17,79 @@ INSTALL_DIR="${ICEBOX_INSTALL_DIR:-$HOME/.local/bin}"
 info()  { printf "\033[1;34m=>\033[0m %s\n" "$1"; }
 error() { printf "\033[1;31merror:\033[0m %s\n" "$1" >&2; exit 1; }
 
-# Detect platform
+# --- Detect platform ---
 OS="$(uname -s)"
 ARCH="$(uname -m)"
 
 case "$OS" in
-  Darwin) PLATFORM="darwin" ;;
-  Linux)  PLATFORM="linux" ;;
-  *)      error "Unsupported OS: $OS" ;;
+  Darwin)
+    case "$ARCH" in
+      arm64|aarch64) TARGET="aarch64-apple-darwin" ;;
+      x86_64)        TARGET="x86_64-apple-darwin" ;;
+      *)             error "Unsupported macOS architecture: $ARCH" ;;
+    esac
+    ;;
+  Linux)
+    # Detect libc (musl vs glibc)
+    if ldd --version 2>&1 | grep -qi musl; then
+      LIBC="musl"
+    else
+      LIBC="gnu"
+    fi
+    case "$ARCH" in
+      x86_64)
+        TARGET="x86_64-unknown-linux-${LIBC}"
+        ;;
+      aarch64|arm64)
+        TARGET="aarch64-unknown-linux-${LIBC}"
+        ;;
+      armv7l)
+        TARGET="armv7-unknown-linux-gnueabihf"
+        ;;
+      *)
+        error "Unsupported Linux architecture: $ARCH. See https://github.com/$REPO/releases for available binaries."
+        ;;
+    esac
+    ;;
+  *)
+    error "Unsupported OS: $OS. See https://github.com/$REPO/releases for available binaries."
+    ;;
 esac
 
-case "$ARCH" in
-  arm64|aarch64) ARCH="arm64" ;;
-  x86_64)        ARCH="x86_64" ;;
-  *)             error "Unsupported architecture: $ARCH" ;;
-esac
-
-ASSET="icebox"
+ASSET="icebox-${TARGET}.tar.gz"
 URL="https://github.com/$REPO/releases/latest/download/$ASSET"
 
-info "Downloading icebox for $PLATFORM/$ARCH..."
-TMPFILE="$(mktemp)"
-if ! curl -fsSL "$URL" -o "$TMPFILE"; then
-  rm -f "$TMPFILE"
-  error "Download failed. Check https://github.com/$REPO/releases for available binaries."
+info "Detected platform: $TARGET"
+info "Downloading $ASSET..."
+
+TMPDIR="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR"' EXIT
+
+if ! curl -fsSL "$URL" -o "$TMPDIR/$ASSET"; then
+  error "Download failed: $URL
+Check https://github.com/$REPO/releases for available binaries."
 fi
 
-chmod +x "$TMPFILE"
+# --- Extract ---
+info "Extracting..."
+tar -xzf "$TMPDIR/$ASSET" -C "$TMPDIR"
 
-# Ensure install directory exists
+if [[ ! -f "$TMPDIR/icebox" ]]; then
+  error "Archive did not contain an 'icebox' binary."
+fi
+
+chmod +x "$TMPDIR/icebox"
+
+# --- Install ---
 mkdir -p "$INSTALL_DIR"
-mv "$TMPFILE" "$INSTALL_DIR/icebox"
+mv "$TMPDIR/icebox" "$INSTALL_DIR/icebox"
 
 info "Installed to $INSTALL_DIR/icebox"
 
-# Check PATH
+# --- PATH check ---
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
   echo ""
-  info "Add this to your shell profile:"
+  info "Add this to your shell profile (~/.zshrc, ~/.bashrc):"
   echo "  export PATH=\"$INSTALL_DIR:\$PATH\""
 fi
 

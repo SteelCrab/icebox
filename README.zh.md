@@ -79,6 +79,27 @@ cargo build --release
 cp target/release/icebox ~/.cargo/bin/
 ```
 
+### 预构建二进制文件 (手动)
+
+无法使用 `install.sh` 的环境，可从 [最新发布](https://github.com/SteelCrab/icebox/releases/latest)
+直接下载适合您平台的二进制文件：
+
+| 平台 | 架构 | 文件 |
+|---|---|---|
+| macOS | Apple Silicon (arm64) | `icebox-aarch64-apple-darwin.tar.gz` |
+| macOS | Intel (x86_64) | `icebox-x86_64-apple-darwin.tar.gz` |
+| Linux | x86_64 (glibc) | `icebox-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux | x86_64 (musl / Alpine) | `icebox-x86_64-unknown-linux-musl.tar.gz` |
+| Linux | aarch64 (glibc) | `icebox-aarch64-unknown-linux-gnu.tar.gz` |
+| Linux | aarch64 (musl / Alpine) | `icebox-aarch64-unknown-linux-musl.tar.gz` |
+| Linux | armv7 (Raspberry Pi 2/3) | `icebox-armv7-unknown-linux-gnueabihf.tar.gz` |
+
+```bash
+tar -xzf icebox-<target>.tar.gz
+chmod +x icebox
+mv icebox ~/.local/bin/    # 或 $PATH 中的任何目录
+```
+
 ## 快速开始
 
 ### 前提条件

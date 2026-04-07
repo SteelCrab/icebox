@@ -39,6 +39,27 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    // Modal modes take priority over bottom chat focus
+    match app.mode {
+        AppMode::SelectModel => {
+            handle_select_model_key(app, key);
+            return;
+        }
+        AppMode::CreateTask => {
+            handle_create_key(app, key);
+            return;
+        }
+        AppMode::ConfirmDelete => {
+            handle_confirm_delete_key(app, key);
+            return;
+        }
+        AppMode::EditTask => {
+            handle_edit_key(app, key);
+            return;
+        }
+        _ => {}
+    }
+
     // Bottom chat focused — handle input first
     if app.bottom_chat_focused {
         handle_bottom_chat_key(app, key);

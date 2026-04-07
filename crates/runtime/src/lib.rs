@@ -4,7 +4,7 @@ pub mod oauth;
 pub mod session;
 pub mod usage;
 
-pub use config::IceboxConfig;
+pub use config::{IceboxConfig, NotionConfig};
 pub use conversation::{
     AiEvent, ConversationRuntime, RuntimeCommand, ToolApproval, ToolExecutor,
 };

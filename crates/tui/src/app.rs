@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use unicode_width::UnicodeWidthStr;
 use tokio::sync::mpsc;
+use icebox_tools::notion::NotionPage;
 
 /// Braille spinner frames for AI thinking animation (from openpista pattern).
 pub const SPINNER_FRAMES: &[char] = &['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'];
@@ -120,6 +121,10 @@ pub struct App {
 
     // Scroll debounce
     pub last_board_scroll: Option<Instant>,
+
+    // Notion integration
+    pub notify_rx: Option<std::sync::mpsc::Receiver<String>>,
+    pub notion_pages_cache: Vec<NotionPage>,
 
     // Create task state
     pub create_input: String,
@@ -272,6 +277,8 @@ impl App {
             create_priority_idx: 1,
             spinner_tick: 0,
             last_board_scroll: None,
+            notify_rx: None,
+            notion_pages_cache: Vec::new(),
         })
     }
 
@@ -295,6 +302,7 @@ impl App {
 
             // Poll AI events (non-blocking)
             self.drain_ai_events();
+            self.drain_notify_events();
 
             if self.ai_busy {
                 self.spinner_tick = self.spinner_tick.wrapping_add(1);
@@ -1630,6 +1638,375 @@ impl App {
         }
     }
 
+    fn handle_notion_command(&mut self, action: Option<String>) {
+        let action_str = action.as_deref().unwrap_or("").trim();
+
+        // Parse subcommand
+        let (subcmd, arg) = match action_str.split_once(' ') {
+            Some((cmd, rest)) => (cmd.trim(), Some(rest.trim())),
+            None => (action_str, None),
+        };
+
+        match subcmd {
+            "push" => self.notion_push(arg),
+            "status" => self.notion_status(),
+            "reset" => self.notion_reset(),
+            "" => {
+                let chat = self.active_chat_messages();
+                chat.push(SidebarMessage {
+                    role: MessageRole::System,
+                    content: "Usage: /notion push [page-name] | /notion status | /notion reset"
+                        .into(),
+                });
+            }
+            other => {
+                // Treat as "/notion push <other>" shorthand
+                self.notion_push(Some(other));
+            }
+        }
+    }
+
+    fn notion_push(&mut self, page_selector: Option<&str>) {
+        let config = icebox_runtime::IceboxConfig::load();
+        let config_api_key = config
+            .notion
+            .as_ref()
+            .and_then(|n| n.api_key.as_deref())
+            .map(String::from);
+
+        // Check API key availability
+        let has_env_key = std::env::var("NOTION_API_KEY")
+            .map(|k| !k.is_empty())
+            .unwrap_or(false);
+        if !has_env_key && config_api_key.is_none() {
+            let chat = self.active_chat_messages();
+            chat.push(SidebarMessage {
+                role: MessageRole::System,
+                content: "NOTION_API_KEY 환경변수를 설정해주세요\n\
+                          https://www.notion.so/my-integrations 에서 생성할 수 있습니다"
+                    .into(),
+            });
+            return;
+        }
+
+        // If we have a database_id and no page selector, sync directly
+        if page_selector.is_none()
+            && let Some(ref notion) = config.notion
+            && let Some(ref db_id) = notion.database_id
+        {
+            let db_id = db_id.clone();
+            let tasks = self.store.list().unwrap_or_default();
+            self.set_status("Notion 동기화 중...", false);
+
+            let (tx, rx) = std::sync::mpsc::channel();
+            self.notify_rx = Some(rx);
+
+            std::thread::spawn(move || {
+                let client = match icebox_tools::notion::NotionClient::from_env(
+                    config_api_key.as_deref(),
+                ) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        let _ = tx.send(format!("Notion 연결 실패: {e}"));
+                        return;
+                    }
+                };
+                match client.sync_tasks(&db_id, &tasks) {
+                    Ok(result) => {
+                        let _ = tx.send(result.to_string());
+                    }
+                    Err(e) => {
+                        let _ = tx.send(format!("Notion 동기화 실패: {e}"));
+                    }
+                }
+            });
+            return;
+        }
+
+        // No database configured or page selector provided → search/setup
+        match page_selector {
+            Some(selector) => {
+                // Check if it's a number (referencing cached search results)
+                if let Ok(idx) = selector.parse::<usize>() {
+                    let cache_len = self.notion_pages_cache.len();
+                    if idx == 0 || idx > cache_len {
+                        let chat = self.active_chat_messages();
+                        chat.push(SidebarMessage {
+                            role: MessageRole::System,
+                            content: format!(
+                                "잘못된 번호입니다. 1~{cache_len} 중 선택해주세요.",
+                            ),
+                        });
+                        return;
+                    }
+                    let page = self.notion_pages_cache.get(idx - 1).cloned();
+                    if let Some(page) = page {
+                        self.notion_setup_and_sync(page, config_api_key);
+                    }
+                    return;
+                }
+
+                // Search by name
+                self.set_status("Notion 페이지 검색 중...", false);
+                let query = selector.to_string();
+                let tasks = self.store.list().unwrap_or_default();
+
+                let (tx, rx) = std::sync::mpsc::channel();
+                self.notify_rx = Some(rx);
+
+                std::thread::spawn(move || {
+                    let client = match icebox_tools::notion::NotionClient::from_env(
+                        config_api_key.as_deref(),
+                    ) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            let _ = tx.send(format!("Notion 연결 실패: {e}"));
+                            return;
+                        }
+                    };
+
+                    // Search for pages
+                    let pages = match client.search_pages(&query) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            let _ = tx.send(format!("Notion 검색 실패: {e}"));
+                            return;
+                        }
+                    };
+
+                    if pages.is_empty() {
+                        let _ = tx.send(format!("'{query}'와 일치하는 Notion 페이지가 없습니다."));
+                        return;
+                    }
+
+                    // If exactly one match, use it directly
+                    if pages.len() == 1 {
+                        let page = &pages[0];
+                        let _ = tx.send(format!(
+                            "Notion 페이지 '{}' 에 데이터베이스 생성 중...",
+                            page.title
+                        ));
+                        match client.create_database(&page.id) {
+                            Ok(db_id) => {
+                                if let Err(e) =
+                                    icebox_runtime::IceboxConfig::save_notion(&db_id, &page.id)
+                                {
+                                    let _ = tx.send(format!("설정 저장 실패: {e}"));
+                                    return;
+                                }
+                                match client.sync_tasks(&db_id, &tasks) {
+                                    Ok(result) => {
+                                        let _ = tx.send(result.to_string());
+                                    }
+                                    Err(e) => {
+                                        let _ = tx.send(format!("Notion 동기화 실패: {e}"));
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                let _ = tx.send(format!("Notion DB 생성 실패: {e}"));
+                            }
+                        }
+                        return;
+                    }
+
+                    // Multiple matches → show list
+                    let mut msg = String::from("여러 페이지가 검색되었습니다:\n");
+                    for (i, page) in pages.iter().enumerate() {
+                        msg.push_str(&format!("  {}. {}\n", i + 1, page.title));
+                    }
+                    msg.push_str("\n/notion push <번호> 로 선택해주세요.");
+                    // Send page list as JSON for caching
+                    let _ = tx.send(format!("__PAGES__:{}", serde_json::to_string(&pages.iter().map(|p| (&p.id, &p.title)).collect::<Vec<_>>()).unwrap_or_default()));
+                    let _ = tx.send(msg);
+                });
+            }
+            None => {
+                // No config, no selector → search all and show list
+                self.set_status("Notion 페이지 검색 중...", false);
+
+                let (tx, rx) = std::sync::mpsc::channel();
+                self.notify_rx = Some(rx);
+
+                std::thread::spawn(move || {
+                    let client = match icebox_tools::notion::NotionClient::from_env(
+                        config_api_key.as_deref(),
+                    ) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            let _ = tx.send(format!("Notion 연결 실패: {e}"));
+                            return;
+                        }
+                    };
+
+                    let pages = match client.search_pages("") {
+                        Ok(p) => p,
+                        Err(e) => {
+                            let _ = tx.send(format!("Notion 검색 실패: {e}"));
+                            return;
+                        }
+                    };
+
+                    if pages.is_empty() {
+                        let _ = tx.send(
+                            "Notion에 접근 가능한 페이지가 없습니다.\n\
+                             Integration에 페이지 액세스를 추가해주세요."
+                                .to_string(),
+                        );
+                        return;
+                    }
+
+                    let mut msg = String::from("Notion 페이지 목록:\n");
+                    for (i, page) in pages.iter().enumerate() {
+                        msg.push_str(&format!("  {}. {}\n", i + 1, page.title));
+                    }
+                    msg.push_str("\n/notion push <번호> 로 대상 페이지를 선택해주세요.");
+                    let _ = tx.send(format!("__PAGES__:{}", serde_json::to_string(&pages.iter().map(|p| (&p.id, &p.title)).collect::<Vec<_>>()).unwrap_or_default()));
+                    let _ = tx.send(msg);
+                });
+            }
+        }
+    }
+
+    fn notion_setup_and_sync(
+        &mut self,
+        page: NotionPage,
+        config_api_key: Option<String>,
+    ) {
+        let tasks = self.store.list().unwrap_or_default();
+        self.set_status("Notion DB 생성 및 동기화 중...", false);
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.notify_rx = Some(rx);
+
+        std::thread::spawn(move || {
+            let client = match icebox_tools::notion::NotionClient::from_env(
+                config_api_key.as_deref(),
+            ) {
+                Ok(c) => c,
+                Err(e) => {
+                    let _ = tx.send(format!("Notion 연결 실패: {e}"));
+                    return;
+                }
+            };
+
+            let _ = tx.send(format!(
+                "'{}' 페이지에 Icebox Kanban 데이터베이스 생성 중...",
+                page.title
+            ));
+
+            match client.create_database(&page.id) {
+                Ok(db_id) => {
+                    if let Err(e) =
+                        icebox_runtime::IceboxConfig::save_notion(&db_id, &page.id)
+                    {
+                        let _ = tx.send(format!("설정 저장 실패: {e}"));
+                        return;
+                    }
+                    match client.sync_tasks(&db_id, &tasks) {
+                        Ok(result) => {
+                            let _ = tx.send(result.to_string());
+                        }
+                        Err(e) => {
+                            let _ = tx.send(format!("Notion 동기화 실패: {e}"));
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(format!("Notion DB 생성 실패: {e}"));
+                }
+            }
+        });
+    }
+
+    fn notion_status(&mut self) {
+        let config = icebox_runtime::IceboxConfig::load();
+        let chat = self.active_chat_messages();
+        match config.notion {
+            Some(ref n) if n.database_id.is_some() => {
+                chat.push(SidebarMessage {
+                    role: MessageRole::System,
+                    content: format!(
+                        "Notion 연결 상태:\n  Database ID: {}\n  Parent Page: {}\n  API Key: {}",
+                        n.database_id.as_deref().unwrap_or("-"),
+                        n.parent_page_id.as_deref().unwrap_or("-"),
+                        if std::env::var("NOTION_API_KEY").is_ok() {
+                            "환경변수 (NOTION_API_KEY)"
+                        } else if n.api_key.is_some() {
+                            "config.json"
+                        } else {
+                            "미설정"
+                        },
+                    ),
+                });
+            }
+            _ => {
+                chat.push(SidebarMessage {
+                    role: MessageRole::System,
+                    content: "Notion이 아직 설정되지 않았습니다.\n\
+                              /notion push 로 설정을 시작하세요."
+                        .into(),
+                });
+            }
+        }
+    }
+
+    fn notion_reset(&mut self) {
+        let mut config = icebox_runtime::IceboxConfig::load();
+        config.notion = None;
+        if let Err(e) = config.save() {
+            self.set_status(format!("설정 초기화 실패: {e}"), true);
+            return;
+        }
+        self.notion_pages_cache.clear();
+        let chat = self.active_chat_messages();
+        chat.push(SidebarMessage {
+            role: MessageRole::System,
+            content: "Notion 설정이 초기화되었습니다.".into(),
+        });
+    }
+
+    fn active_chat_messages(&mut self) -> &mut Vec<SidebarMessage> {
+        if self.bottom_chat_focused {
+            &mut self.bottom_chat.messages
+        } else {
+            &mut self.sidebar.messages
+        }
+    }
+
+    fn drain_notify_events(&mut self) {
+        let rx = match &self.notify_rx {
+            Some(rx) => rx,
+            None => return,
+        };
+        let mut messages = Vec::new();
+        while let Ok(msg) = rx.try_recv() {
+            messages.push(msg);
+        }
+        for msg in messages {
+            // Handle page cache updates from notion search
+            if let Some(json_str) = msg.strip_prefix("__PAGES__:") {
+                if let Ok(pairs) = serde_json::from_str::<Vec<(String, String)>>(json_str) {
+                    self.notion_pages_cache = pairs
+                        .into_iter()
+                        .map(|(id, title)| NotionPage { id, title })
+                        .collect();
+                }
+                continue;
+            }
+
+            let chat = if self.bottom_chat_focused {
+                &mut self.bottom_chat.messages
+            } else {
+                &mut self.sidebar.messages
+            };
+            chat.push(SidebarMessage {
+                role: MessageRole::System,
+                content: msg,
+            });
+        }
+    }
+
     fn handle_slash_command(&mut self, cmd: icebox_commands::SlashCommand) {
         match cmd {
             icebox_commands::SlashCommand::Help => {
@@ -1987,6 +2364,9 @@ impl App {
                         });
                     }
                 }
+            }
+            icebox_commands::SlashCommand::Notion { action } => {
+                self.handle_notion_command(action);
             }
             icebox_commands::SlashCommand::Resume { .. } => {
                 self.sidebar.messages.push(SidebarMessage {

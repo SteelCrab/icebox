@@ -1,3 +1,5 @@
+pub mod notion;
+
 use anyhow::{Context, Result};
 use icebox_api::ToolDefinition;
 use icebox_task::model::{Column, Priority, Task};
@@ -46,6 +48,7 @@ impl icebox_runtime::ToolExecutor for IceboxToolExecutor {
             "save_memory" => execute_save_memory(input, &self.memory_store),
             "list_memories" => execute_list_memories(&self.memory_store),
             "delete_memory" => execute_delete_memory(input, &self.memory_store),
+            "notion_sync" => execute_notion_sync(input, &self.store),
             _ => Ok(format!("Unknown tool: {tool_name}")),
         }
     }
@@ -192,6 +195,18 @@ impl icebox_runtime::ToolExecutor for IceboxToolExecutor {
                         "memory_id": { "type": "string", "description": "Memory ID to delete" }
                     },
                     "required": ["memory_id"]
+                }),
+            },
+            ToolDefinition {
+                name: "notion_sync".to_string(),
+                description: Some("Icebox built-in tool. Sync kanban tasks to a Notion database. Actions: push (sync tasks), status (show config).".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "action": { "type": "string", "description": "Action to perform", "enum": ["push", "status"] },
+                        "page_name": { "type": "string", "description": "Parent page name for initial setup (only needed once)" }
+                    },
+                    "required": ["action"]
                 }),
             },
         ]
@@ -626,6 +641,61 @@ fn execute_delete_memory(
         Ok(format!("Memory {} deleted.", parsed.memory_id))
     } else {
         Ok(format!("Memory {} not found.", parsed.memory_id))
+    }
+}
+
+fn execute_notion_sync(input: &str, store: &Arc<Mutex<TaskStore>>) -> Result<String> {
+    let parsed: notion::NotionSyncInput =
+        serde_json::from_str(input).context("invalid notion_sync input")?;
+
+    let config = icebox_runtime::IceboxConfig::load();
+    let config_api_key = config
+        .notion
+        .as_ref()
+        .and_then(|n| n.api_key.as_deref());
+
+    let client = match notion::NotionClient::from_env(config_api_key) {
+        Ok(c) => c,
+        Err(e) => return Ok(format!("Notion 연결 실패: {e}")),
+    };
+
+    match parsed.action.as_str() {
+        "push" => {
+            let database_id = match config.notion.as_ref().and_then(|n| n.database_id.as_deref()) {
+                Some(id) => id.to_string(),
+                None => {
+                    return Ok(
+                        "Notion 데이터베이스가 설정되지 않았습니다.\n\
+                         /notion push <parent-page-name> 으로 먼저 설정해주세요."
+                            .to_string(),
+                    );
+                }
+            };
+
+            let store = store
+                .lock()
+                .map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
+            let tasks = store.list()?;
+            drop(store);
+
+            match client.sync_tasks(&database_id, &tasks) {
+                Ok(result) => Ok(result.to_string()),
+                Err(e) => Ok(format!("Notion 동기화 실패: {e}")),
+            }
+        }
+        "status" => {
+            match config.notion {
+                Some(ref n) if n.database_id.is_some() => {
+                    Ok(format!(
+                        "Notion 연결 상태:\n  Database ID: {}\n  Parent Page: {}",
+                        n.database_id.as_deref().unwrap_or("-"),
+                        n.parent_page_id.as_deref().unwrap_or("-"),
+                    ))
+                }
+                _ => Ok("Notion이 아직 설정되지 않았습니다.".to_string()),
+            }
+        }
+        other => Ok(format!("Unknown notion action: {other}. Use 'push' or 'status'.")),
     }
 }
 

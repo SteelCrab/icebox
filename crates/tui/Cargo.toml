@@ -11,6 +11,7 @@ workspace = true
 icebox-task = { path = "../task" }
 icebox-runtime = { path = "../runtime" }
 icebox-commands = { path = "../commands" }
+icebox-tools = { path = "../tools" }
 ratatui = { workspace = true }
 crossterm = { workspace = true }
 serde = { workspace = true }

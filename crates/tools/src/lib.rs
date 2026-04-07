@@ -128,6 +128,7 @@ impl icebox_runtime::ToolExecutor for IceboxToolExecutor {
                         "title": { "type": "string", "description": "Task title" },
                         "column": { "type": "string", "description": "Target column", "enum": ["icebox", "emergency", "inprogress", "testing", "complete"] },
                         "priority": { "type": "string", "description": "Task priority", "enum": ["low", "medium", "high", "critical"] },
+                        "swimlane": { "type": "string", "description": "Swimlane name (optional grouping)" },
                         "start_date": { "type": "string", "description": "Start date (ISO8601, e.g. 2026-04-03T00:00:00Z)" },
                         "due_date": { "type": "string", "description": "Due date (ISO8601, e.g. 2026-04-10T00:00:00Z)" }
                     },
@@ -136,7 +137,7 @@ impl icebox_runtime::ToolExecutor for IceboxToolExecutor {
             },
             ToolDefinition {
                 name: "update_task".to_string(),
-                description: Some("Icebox built-in tool. Update fields of an existing task (title, tags, priority, dates, body).".to_string()),
+                description: Some("Icebox built-in tool. Update fields of an existing task (title, tags, priority, dates, swimlane, body).".to_string()),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -144,6 +145,7 @@ impl icebox_runtime::ToolExecutor for IceboxToolExecutor {
                         "title": { "type": "string", "description": "New title" },
                         "priority": { "type": "string", "description": "New priority", "enum": ["low", "medium", "high", "critical"] },
                         "tags": { "type": "array", "items": { "type": "string" }, "description": "New tags (replaces existing)" },
+                        "swimlane": { "type": "string", "description": "Swimlane name. Use empty string to clear." },
                         "start_date": { "type": "string", "description": "Start date (ISO8601, e.g. 2026-04-03T00:00:00Z). Use empty string to clear." },
                         "due_date": { "type": "string", "description": "Due date (ISO8601, e.g. 2026-04-10T00:00:00Z). Use empty string to clear." },
                         "body": { "type": "string", "description": "New body text (markdown)" }
@@ -381,11 +383,16 @@ fn execute_list_tasks(store: &Arc<Mutex<TaskStore>>) -> Result<String> {
         match tasks.get(&col) {
             Some(col_tasks) if !col_tasks.is_empty() => {
                 for task in col_tasks {
+                    let lane = task
+                        .swimlane
+                        .as_ref()
+                        .map_or(String::new(), |s| format!(" @{s}"));
                     output.push_str(&format!(
-                        "- [{}] {} ({}) {}\n",
+                        "- [{}] {} ({}){} {}\n",
                         task.id,
                         task.title,
                         task.priority.label(),
+                        lane,
                         if task.tags.is_empty() {
                             String::new()
                         } else {
@@ -407,6 +414,7 @@ struct CreateTaskInput {
     title: String,
     column: Option<String>,
     priority: Option<String>,
+    swimlane: Option<String>,
     start_date: Option<String>,
     due_date: Option<String>,
 }
@@ -431,6 +439,11 @@ fn execute_create_task(input: &str, store: &Arc<Mutex<TaskStore>>) -> Result<Str
     };
 
     let mut task = Task::new(parsed.title.clone(), column, priority);
+    if let Some(s) = &parsed.swimlane
+        && !s.is_empty()
+    {
+        task.swimlane = Some(s.clone());
+    }
     if let Some(s) = &parsed.start_date {
         task.start_date = chrono::DateTime::parse_from_rfc3339(s)
             .map(|dt| dt.with_timezone(&chrono::Utc))
@@ -460,6 +473,7 @@ struct UpdateTaskInput {
     title: Option<String>,
     priority: Option<String>,
     tags: Option<Vec<String>>,
+    swimlane: Option<String>,
     start_date: Option<String>,
     due_date: Option<String>,
     body: Option<String>,
@@ -493,6 +507,14 @@ fn execute_update_task(input: &str, store: &Arc<Mutex<TaskStore>>) -> Result<Str
     if let Some(tags) = &parsed.tags {
         task.tags = tags.clone();
         changes.push("tags");
+    }
+    if let Some(s) = &parsed.swimlane {
+        if s.is_empty() {
+            task.swimlane = None;
+        } else {
+            task.swimlane = Some(s.clone());
+        }
+        changes.push("swimlane");
     }
     if let Some(s) = &parsed.start_date {
         if s.is_empty() {

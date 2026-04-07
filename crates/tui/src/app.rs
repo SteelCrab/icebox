@@ -81,6 +81,7 @@ pub struct App {
     pub workspace_path: std::path::PathBuf,
     pub git_branch: Option<String>,
     pub sidebar_rect: Option<Rect>,
+    pub swimlane_bar_rect: Option<Rect>,
 
     // Edit task state
     pub edit_title: String,
@@ -124,6 +125,7 @@ pub struct App {
     // Create task state
     pub create_input: String,
     pub create_tags: String,
+    pub create_swimlane: String,
     pub create_start_date: String,
     pub create_due_date: String,
     pub create_field: CreateField,
@@ -134,6 +136,7 @@ pub struct App {
 pub enum CreateField {
     Title,
     Tags,
+    Swimlane,
     StartDate,
     DueDate,
 }
@@ -243,6 +246,7 @@ impl App {
             workspace_path: workspace.to_path_buf(),
             git_branch,
             sidebar_rect: None,
+            swimlane_bar_rect: None,
             edit_title: String::new(),
             edit_body: String::new(),
             edit_field: EditField::Title,
@@ -266,6 +270,7 @@ impl App {
             effort: icebox_runtime::Effort::High,
             create_input: String::new(),
             create_tags: String::new(),
+            create_swimlane: String::new(),
             create_start_date: String::new(),
             create_due_date: String::new(),
             create_field: CreateField::Title,
@@ -414,6 +419,15 @@ impl App {
         }
     }
 
+    /// Returns the message list for the currently focused chat area.
+    fn active_chat(&mut self) -> &mut Vec<SidebarMessage> {
+        if self.bottom_chat_focused {
+            &mut self.bottom_chat.messages
+        } else {
+            &mut self.sidebar.messages
+        }
+    }
+
     /// Switch the sidebar chat to a different task, saving/restoring messages.
     pub fn switch_sidebar_task(&mut self, new_task_id: Option<String>) {
         // Save current sidebar messages if we have an active task
@@ -450,16 +464,21 @@ impl App {
             self.mode,
             AppMode::TaskDetail | AppMode::EditTask | AppMode::SelectModel
         );
+        let show_swimlane_bar =
+            self.active_tab == Tab::Board && !self.board.swimlanes.is_empty();
         let app_layout = layout::compute_layout(
             area,
             sidebar_open,
             self.bottom_chat_open,
             self.bottom_chat_height,
+            show_swimlane_bar,
         );
 
         self.column_rects = app_layout.columns.clone();
+        self.swimlane_bar_rect = app_layout.swimlane_bar;
 
         self.render_header(&app_layout, frame);
+        self.render_swimlane_bar(&app_layout, frame);
 
         match self.active_tab {
             Tab::Board => {
@@ -637,6 +656,39 @@ impl App {
             Span::styled(" 2:Memory ", tab_style(Tab::Memory)),
         ]);
         frame.render_widget(Paragraph::new(tab_bar), layout.tab_bar);
+    }
+
+    fn render_swimlane_bar(&self, layout: &AppLayout, frame: &mut Frame) {
+        let Some(bar_rect) = layout.swimlane_bar else {
+            return;
+        };
+        let mut spans = vec![Span::raw(" ")];
+
+        let active_style = Style::default()
+            .fg(ratatui::style::Color::Black)
+            .bg(ratatui::style::Color::Cyan)
+            .add_modifier(Modifier::BOLD);
+        let inactive_style = theme::dim_style();
+
+        // "All" tab
+        let all_style = if self.board.active_swimlane.is_none() {
+            active_style
+        } else {
+            inactive_style
+        };
+        spans.push(Span::styled(" All ", all_style));
+
+        for (i, name) in self.board.swimlanes.iter().enumerate() {
+            spans.push(Span::raw(" "));
+            let style = if self.board.active_swimlane == Some(i) {
+                active_style
+            } else {
+                inactive_style
+            };
+            spans.push(Span::styled(format!(" {name} "), style));
+        }
+
+        frame.render_widget(Paragraph::new(Line::from(spans)), bar_rect);
     }
 
     fn render_memory_view(&self, layout: &AppLayout, frame: &mut Frame) {
@@ -1302,7 +1354,7 @@ impl App {
     fn render_create_modal(&self, frame: &mut Frame) {
         let area = frame.area();
         let modal_w = 55.min(area.width.saturating_sub(4));
-        let modal_h = 14;
+        let modal_h = 15;
         let x = (area.width.saturating_sub(modal_w)) / 2;
         let y = (area.height.saturating_sub(modal_h)) / 2;
         let modal_area = Rect::new(x, y, modal_w, modal_h);
@@ -1336,6 +1388,11 @@ impl App {
         } else {
             ""
         };
+        let lane_hint = if self.create_swimlane.is_empty() && self.create_field == CreateField::Swimlane {
+            "e.g. frontend, backend (optional)"
+        } else {
+            ""
+        };
         let start_hint = if self.create_start_date.is_empty() && self.create_field == CreateField::StartDate {
             "YYYY-MM-DD (optional)"
         } else {
@@ -1358,6 +1415,12 @@ impl App {
                 Span::raw(&self.create_tags),
                 Span::styled(cursor(CreateField::Tags), blink),
                 Span::styled(tags_hint, theme::dim_style()),
+            ]),
+            Line::from(vec![
+                Span::styled("Swimlane: ", label_style(CreateField::Swimlane)),
+                Span::raw(&self.create_swimlane),
+                Span::styled(cursor(CreateField::Swimlane), blink),
+                Span::styled(lane_hint, theme::dim_style()),
             ]),
             Line::from(vec![
                 Span::styled("Start:    ", label_style(CreateField::StartDate)),
@@ -1494,6 +1557,13 @@ impl App {
             .filter(|t| !t.is_empty())
             .collect();
         task.tags = tags;
+
+        let swimlane = self.create_swimlane.trim().to_string();
+        task.swimlane = if swimlane.is_empty() {
+            None
+        } else {
+            Some(swimlane)
+        };
 
         if let Some(dt) = parse_date_input(&self.create_start_date) {
             task.start_date = Some(dt);
@@ -1634,13 +1704,13 @@ impl App {
         match cmd {
             icebox_commands::SlashCommand::Help => {
                 let help = icebox_commands::render_help();
-                self.sidebar.messages.push(SidebarMessage {
+                self.active_chat().push(SidebarMessage {
                     role: MessageRole::System,
                     content: help,
                 });
             }
             icebox_commands::SlashCommand::Clear => {
-                self.sidebar.messages.clear();
+                self.active_chat().clear();
                 // Also clear the runtime session
                 let session_id = if self.bottom_chat_focused {
                     None
@@ -1662,11 +1732,7 @@ impl App {
                     sender(RuntimeCommand::CompactSession { session_id });
                 }
                 // Keep only recent UI messages
-                let chat = if self.bottom_chat_focused {
-                    &mut self.bottom_chat.messages
-                } else {
-                    &mut self.sidebar.messages
-                };
+                let chat = self.active_chat();
                 let len = chat.len();
                 if len > 4 {
                     let recent = chat.split_off(len - 4);
@@ -1681,13 +1747,14 @@ impl App {
                 } else {
                     "not connected"
                 };
-                self.sidebar.messages.push(SidebarMessage {
+                let msg = SidebarMessage {
                     role: MessageRole::System,
                     content: format!(
                         "Tasks: {task_count} | AI: {ai_status} | Busy: {}",
                         self.ai_busy
                     ),
-                });
+                };
+                self.active_chat().push(msg);
             }
             icebox_commands::SlashCommand::Model { model } => {
                 match model {
@@ -1700,7 +1767,7 @@ impl App {
                                 if let Some(sender) = &self.ai_sender {
                                     sender(RuntimeCommand::SwitchModel(m.id.to_string()));
                                 }
-                                self.sidebar.messages.push(SidebarMessage {
+                                self.active_chat().push(SidebarMessage {
                                     role: MessageRole::System,
                                     content: format!(
                                         "Switched to {} ({}, {}K tokens, ${:.0}→${:.0}/M)",
@@ -1713,13 +1780,14 @@ impl App {
                                 });
                             }
                             None => {
-                                self.sidebar.messages.push(SidebarMessage {
+                                let msg = SidebarMessage {
                                     role: MessageRole::System,
                                     content: format!(
                                         "Unknown model: {name}\n{}",
                                         icebox_runtime::format_model_list(&self.current_model),
                                     ),
-                                });
+                                };
+                                self.active_chat().push(msg);
                             }
                         }
                     }
@@ -1734,7 +1802,7 @@ impl App {
                 }
             }
             icebox_commands::SlashCommand::Login => {
-                self.sidebar.messages.push(SidebarMessage {
+                self.active_chat().push(SidebarMessage {
                     role: MessageRole::System,
                     content: "OAuth login must be run from terminal.\nRun: icebox login\n\nOr set ANTHROPIC_API_KEY environment variable.".into(),
                 });
@@ -1742,14 +1810,14 @@ impl App {
             icebox_commands::SlashCommand::Logout => {
                 match icebox_runtime::clear_oauth_credentials() {
                     Ok(()) => {
-                        self.sidebar.messages.push(SidebarMessage {
+                        self.active_chat().push(SidebarMessage {
                             role: MessageRole::System,
                             content: "Logged out. OAuth credentials cleared.\nRestart icebox to use new credentials.".into(),
                         });
                         self.set_status("Logged out", false);
                     }
                     Err(e) => {
-                        self.sidebar.messages.push(SidebarMessage {
+                        self.active_chat().push(SidebarMessage {
                             role: MessageRole::System,
                             content: format!("Logout failed: {e}"),
                         });
@@ -1757,19 +1825,19 @@ impl App {
                 }
             }
             icebox_commands::SlashCommand::Cost => {
-                let usage_info = format!(
-                    "Session usage tracking not yet available.\nModel: {}",
-                    self.current_model
-                );
-                self.sidebar.messages.push(SidebarMessage {
+                let msg = SidebarMessage {
                     role: MessageRole::System,
-                    content: usage_info,
-                });
+                    content: format!(
+                        "Session usage tracking not yet available.\nModel: {}",
+                        self.current_model
+                    ),
+                };
+                self.active_chat().push(msg);
             }
             icebox_commands::SlashCommand::Remember { text } => {
                 let content = text.unwrap_or_default();
                 if content.is_empty() {
-                    self.sidebar.messages.push(SidebarMessage {
+                    self.active_chat().push(SidebarMessage {
                         role: MessageRole::System,
                         content: "Usage: /remember <text>".into(),
                     });
@@ -1781,13 +1849,13 @@ impl App {
                     if let Some(store) = &self.memory_store {
                         match store.add(content.clone(), source) {
                             Ok(_) => {
-                                self.sidebar.messages.push(SidebarMessage {
+                                self.active_chat().push(SidebarMessage {
                                     role: MessageRole::System,
                                     content: format!("Saved: {content}"),
                                 });
                             }
                             Err(e) => {
-                                self.sidebar.messages.push(SidebarMessage {
+                                self.active_chat().push(SidebarMessage {
                                     role: MessageRole::System,
                                     content: format!("Failed to save memory: {e}"),
                                 });
@@ -1804,7 +1872,7 @@ impl App {
             icebox_commands::SlashCommand::New { title } => {
                 let title = title.unwrap_or_default();
                 if title.is_empty() {
-                    self.sidebar.messages.push(SidebarMessage {
+                    self.active_chat().push(SidebarMessage {
                         role: MessageRole::System,
                         content: "Usage: /new <title>".into(),
                     });
@@ -1814,13 +1882,13 @@ impl App {
                     match self.store.save(&task) {
                         Ok(()) => {
                             self.reload_tasks();
-                            self.sidebar.messages.push(SidebarMessage {
+                            self.active_chat().push(SidebarMessage {
                                 role: MessageRole::System,
                                 content: format!("Created: {title} [{id}]"),
                             });
                         }
                         Err(e) => {
-                            self.sidebar.messages.push(SidebarMessage {
+                            self.active_chat().push(SidebarMessage {
                                 role: MessageRole::System,
                                 content: format!("Failed to create task: {e}"),
                             });
@@ -1840,7 +1908,7 @@ impl App {
                 };
                 match target {
                     None => {
-                        self.sidebar.messages.push(SidebarMessage {
+                        self.active_chat().push(SidebarMessage {
                             role: MessageRole::System,
                             content: "Usage: /move <icebox|emergency|inprogress|testing|complete>".into(),
                         });
@@ -1880,7 +1948,7 @@ impl App {
                             Err(e) => self.set_status(format!("Delete failed: {e}"), true),
                         }
                     } else {
-                        self.sidebar.messages.push(SidebarMessage {
+                        self.active_chat().push(SidebarMessage {
                             role: MessageRole::System,
                             content: "Usage: /delete <task-id-prefix> or select a task first".into(),
                         });
@@ -1908,7 +1976,7 @@ impl App {
             icebox_commands::SlashCommand::Search { query } => {
                 let q = query.unwrap_or_default().to_lowercase();
                 if q.is_empty() {
-                    self.sidebar.messages.push(SidebarMessage {
+                    self.active_chat().push(SidebarMessage {
                         role: MessageRole::System,
                         content: "Usage: /search <query>".into(),
                     });
@@ -1919,7 +1987,7 @@ impl App {
                         .filter(|t| t.title.to_lowercase().contains(&q) || t.tags.iter().any(|tag| tag.to_lowercase().contains(&q)))
                         .collect();
                     if results.is_empty() {
-                        self.sidebar.messages.push(SidebarMessage {
+                        self.active_chat().push(SidebarMessage {
                             role: MessageRole::System,
                             content: format!("No tasks matching '{q}'"),
                         });
@@ -1933,7 +2001,7 @@ impl App {
                                 t.column.display_name()
                             ));
                         }
-                        self.sidebar.messages.push(SidebarMessage {
+                        self.active_chat().push(SidebarMessage {
                             role: MessageRole::System,
                             content: output,
                         });
@@ -1957,45 +2025,89 @@ impl App {
                         }
                     }
                 }
-                self.sidebar.messages.push(SidebarMessage {
+                self.active_chat().push(SidebarMessage {
                     role: MessageRole::System,
                     content: output,
                 });
             }
             icebox_commands::SlashCommand::Diff => {
-                match std::process::Command::new("git")
+                let diff_result = std::process::Command::new("git")
                     .args(["diff", "--stat"])
                     .current_dir(&self.workspace_path)
-                    .output()
-                {
+                    .output();
+                let msg = match diff_result {
                     Ok(out) => {
                         let stdout = String::from_utf8_lossy(&out.stdout);
-                        let content = if stdout.is_empty() {
+                        if stdout.is_empty() {
                             "No changes.".to_string()
                         } else {
                             stdout.into_owned()
+                        }
+                    }
+                    Err(e) => format!("git diff failed: {e}"),
+                };
+                self.active_chat().push(SidebarMessage {
+                    role: MessageRole::System,
+                    content: msg,
+                });
+            }
+            icebox_commands::SlashCommand::Swimlane { name } => {
+                match name {
+                    None => {
+                        let msg = if self.board.swimlanes.is_empty() {
+                            "No swimlanes defined. Use /swimlane <name> on a selected task.".to_string()
+                        } else {
+                            let mut output = String::from("Swimlanes:\n");
+                            for sl in &self.board.swimlanes {
+                                let count: usize = self
+                                    .board
+                                    .all_tasks
+                                    .values()
+                                    .flat_map(|v| v.iter())
+                                    .filter(|t| t.swimlane.as_deref() == Some(sl.as_str()))
+                                    .count();
+                                output.push_str(&format!("  [{sl}] ({count} tasks)\n"));
+                            }
+                            output
                         };
-                        self.sidebar.messages.push(SidebarMessage {
+                        self.active_chat().push(SidebarMessage {
                             role: MessageRole::System,
-                            content,
+                            content: msg,
                         });
                     }
-                    Err(e) => {
-                        self.sidebar.messages.push(SidebarMessage {
-                            role: MessageRole::System,
-                            content: format!("git diff failed: {e}"),
-                        });
+                    Some(value) => {
+                        let Some(task) = self.board.selected_task().cloned() else {
+                            self.set_status("No task selected", true);
+                            return;
+                        };
+                        let mut task = task;
+                        if value == "clear" || value == "none" {
+                            task.swimlane = None;
+                        } else {
+                            task.swimlane = Some(value);
+                        }
+                        task.updated_at = chrono::Utc::now();
+                        match self.store.save(&task) {
+                            Ok(()) => {
+                                self.reload_tasks();
+                                let label = task.swimlane.as_deref().unwrap_or("(none)");
+                                self.set_status(format!("Swimlane: {label}"), false);
+                            }
+                            Err(e) => {
+                                self.set_status(format!("Swimlane failed: {e}"), true);
+                            }
+                        }
                     }
                 }
             }
             icebox_commands::SlashCommand::Resume { .. } => {
-                self.sidebar.messages.push(SidebarMessage {
+                self.active_chat().push(SidebarMessage {
                     role: MessageRole::System,
                     content: "Session resume not yet implemented.".into(),
                 });
             }
             icebox_commands::SlashCommand::Unknown(name) => {
-                self.sidebar.messages.push(SidebarMessage {
+                self.active_chat().push(SidebarMessage {
                     role: MessageRole::System,
                     content: format!(
                         "Unknown command: /{name}. Type /help for available commands."

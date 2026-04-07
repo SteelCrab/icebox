@@ -126,6 +126,8 @@ pub struct Task {
     pub priority: Priority,
     #[serde(default)]
     pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub swimlane: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends_on: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -173,6 +175,7 @@ impl Task {
             column,
             priority,
             tags: Vec::new(),
+            swimlane: None,
             depends_on: Vec::new(),
             start_date: None,
             due_date: None,

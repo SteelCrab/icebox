@@ -13,21 +13,31 @@ fn truncate_str(s: &str, max_chars: usize) -> String {
     format!("{truncated}...")
 }
 
-/// Whether the card has a metadata line (tags, progress, or dates).
-fn has_meta_line(task: &Task) -> bool {
+/// Whether the card has a metadata line (tags, progress, dates, or swimlane badge).
+fn has_meta_line(task: &Task, show_swimlane: bool) -> bool {
     !task.tags.is_empty()
         || task.progress.is_some()
         || task.start_date.is_some()
         || task.due_date.is_some()
+        || (show_swimlane && task.swimlane.is_some())
 }
 
 /// Number of lines a card occupies (excluding separator).
 /// Must match `render_card` logic: 1 line for title, +1 if metadata present.
-pub fn card_line_count(task: &Task, _width: u16) -> usize {
-    if has_meta_line(task) { 2 } else { 1 }
+pub fn card_line_count(task: &Task, _width: u16, show_swimlane: bool) -> usize {
+    if has_meta_line(task, show_swimlane) {
+        2
+    } else {
+        1
+    }
 }
 
-pub fn render_card(task: &Task, selected: bool, width: u16) -> Vec<Line<'static>> {
+pub fn render_card(
+    task: &Task,
+    selected: bool,
+    width: u16,
+    show_swimlane: bool,
+) -> Vec<Line<'static>> {
     let style = theme::card_style(selected);
     let priority_style = theme::priority_style(task.priority);
     let w = width.saturating_sub(4) as usize;
@@ -39,8 +49,15 @@ pub fn render_card(task: &Task, selected: bool, width: u16) -> Vec<Line<'static>
         Span::styled(title, style),
     ])];
 
-    if has_meta_line(task) {
+    if has_meta_line(task, show_swimlane) {
         let mut parts: Vec<String> = Vec::new();
+
+        // Swimlane badge (only in "All" view)
+        if show_swimlane
+            && let Some(ref lane) = task.swimlane
+        {
+            parts.push(format!("@{lane}"));
+        }
 
         // Tags (up to 3)
         if !task.tags.is_empty() {

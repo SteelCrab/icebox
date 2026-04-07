@@ -115,6 +115,11 @@ fn handle_board_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('n') => {
             app.create_input.clear();
             app.create_tags.clear();
+            app.create_swimlane = app
+                .board
+                .active_swimlane_name()
+                .unwrap_or_default()
+                .to_string();
             app.create_start_date.clear();
             app.create_due_date.clear();
             app.create_field = crate::app::CreateField::Title;
@@ -124,6 +129,10 @@ fn handle_board_key(app: &mut App, key: KeyEvent) {
 
         KeyCode::Char('L') | KeyCode::Char('>') => app.move_task_right(),
         KeyCode::Char('H') | KeyCode::Char('<') => app.move_task_left(),
+
+        // Swimlane navigation
+        KeyCode::Char(']') => app.board.next_swimlane(),
+        KeyCode::Char('[') => app.board.prev_swimlane(),
 
         // Delete with 'd' or Enter on confirm
         KeyCode::Char('d') => {
@@ -237,6 +246,28 @@ fn handle_detail_key(app: &mut App, key: KeyEvent) {
 
         KeyCode::Char('>') => app.move_task_right(),
         KeyCode::Char('<') => app.move_task_left(),
+
+        // Clear swimlane from selected task
+        KeyCode::Char('s') if !app.sidebar_focused => {
+            if let Some(task) = app.board.selected_task().cloned() {
+                if task.swimlane.is_some() {
+                    let mut task = task;
+                    task.swimlane = None;
+                    task.updated_at = chrono::Utc::now();
+                    match app.store.save(&task) {
+                        Ok(()) => {
+                            app.reload_tasks();
+                            app.set_status("Swimlane cleared", false);
+                        }
+                        Err(e) => {
+                            app.set_status(format!("Failed: {e}"), true);
+                        }
+                    }
+                } else {
+                    app.set_status("No swimlane to clear. Use /swimlane <name> to set", false);
+                }
+            }
+        }
 
         // Toggle bottom chat from detail mode
         KeyCode::Char('/') if !app.sidebar_focused => {
@@ -399,9 +430,10 @@ fn handle_edit_key(app: &mut App, key: KeyEvent) {
 fn handle_create_key(app: &mut App, key: KeyEvent) {
     use crate::app::CreateField;
 
-    const FIELD_ORDER: [CreateField; 4] = [
+    const FIELD_ORDER: [CreateField; 5] = [
         CreateField::Title,
         CreateField::Tags,
+        CreateField::Swimlane,
         CreateField::StartDate,
         CreateField::DueDate,
     ];
@@ -413,7 +445,8 @@ fn handle_create_key(app: &mut App, key: KeyEvent) {
         KeyCode::Enter => {
             match app.create_field {
                 CreateField::Title => app.create_field = CreateField::Tags,
-                CreateField::Tags => app.create_field = CreateField::StartDate,
+                CreateField::Tags => app.create_field = CreateField::Swimlane,
+                CreateField::Swimlane => app.create_field = CreateField::StartDate,
                 CreateField::StartDate => app.create_field = CreateField::DueDate,
                 CreateField::DueDate => {
                     app.create_task_from_input();
@@ -424,12 +457,14 @@ fn handle_create_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char(c) => match app.create_field {
             CreateField::Title => app.create_input.push(c),
             CreateField::Tags => app.create_tags.push(c),
+            CreateField::Swimlane => app.create_swimlane.push(c),
             CreateField::StartDate => app.create_start_date.push(c),
             CreateField::DueDate => app.create_due_date.push(c),
         },
         KeyCode::Backspace => match app.create_field {
             CreateField::Title => { app.create_input.pop(); }
             CreateField::Tags => { app.create_tags.pop(); }
+            CreateField::Swimlane => { app.create_swimlane.pop(); }
             CreateField::StartDate => { app.create_start_date.pop(); }
             CreateField::DueDate => { app.create_due_date.pop(); }
         },
@@ -671,6 +706,33 @@ fn detect_drag_target(app: &App, x: u16, y: u16) -> DragTarget {
 }
 
 fn handle_mouse_click(app: &mut App, x: u16, y: u16) {
+    // Check if click is in swimlane bar
+    if let Some(bar) = app.swimlane_bar_rect
+        && y == bar.y
+        && x >= bar.x
+        && x < bar.x.saturating_add(bar.width)
+    {
+        let rel_x = x.saturating_sub(bar.x);
+        // Layout: 1(pad) + 5(" All ") + for each swimlane: 1(sep) + name.len()+2
+        let all_end: u16 = 6; // 1 + 5
+        if rel_x < all_end {
+            app.board.active_swimlane = None;
+        } else {
+            let mut pos = all_end;
+            for (i, name) in app.board.swimlanes.iter().enumerate() {
+                pos += 1; // separator
+                let tab_width = name.len() as u16 + 2; // " name "
+                if rel_x >= pos && rel_x < pos.saturating_add(tab_width) {
+                    app.board.active_swimlane = Some(i);
+                    break;
+                }
+                pos += tab_width;
+            }
+        }
+        app.board.refilter();
+        return;
+    }
+
     let rects: Vec<Rect> = app.column_rects.clone();
 
     // Check if click is in sidebar area (task detail / input)
@@ -734,7 +796,8 @@ fn handle_mouse_click(app: &mut App, x: u16, y: u16) {
                 if card_y >= inner_y.saturating_add(inner_height) {
                     break;
                 }
-                let card_lines = card::card_line_count(task, inner_width);
+                let show_sl = app.board.active_swimlane.is_none();
+                let card_lines = card::card_line_count(task, inner_width, show_sl);
                 let card_end = card_y.saturating_add(card_lines as u16);
                 if y >= card_y && y < card_end {
                     matched_idx = Some(task_i);

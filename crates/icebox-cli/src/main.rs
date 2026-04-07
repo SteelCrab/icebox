@@ -554,7 +554,7 @@ fn setup_ai_runtime(app: &mut App, workspace: &std::path::Path) {
                  - grep_search: Search file contents with regex\n\
                  - list_tasks: List all kanban tasks by column\n\
                  - create_task: Create a new task\n\
-                 - update_task: Update an existing task (title, priority, tags, start_date, due_date, body)\n\
+                 - update_task: Update an existing task (title, priority, tags, swimlane, start_date, due_date, body)\n\
                  - move_task: Move a task to another column\n\
                  - save_memory / list_memories / delete_memory: Persistent memory\n\
                  \n\

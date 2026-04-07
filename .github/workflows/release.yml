@@ -3,8 +3,9 @@
 # Trigger: push a version tag (e.g. `git tag -a v0.2.1 -m "v0.2.1" && git push origin v0.2.1`)
 #
 # What it does:
-#   1. Build release binaries for 7 targets (Linux + macOS) in parallel via matrix
-#   2. Upload each binary as a tar.gz to the GitHub Release
+#   1. Create the GitHub Release (empty, with auto-generated notes)
+#   2. Build release binaries for 7 targets (Linux + macOS) in parallel via matrix
+#      and upload each as a tar.gz to the Release
 #   3. Regenerate SteelCrab/homebrew-tap Formula/icebox.rb (macOS arm64 + x86_64)
 #
 # Requirements:
@@ -22,31 +23,49 @@ permissions:
   contents: write
 
 jobs:
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create release if missing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; skipping create."
+          else
+            gh release create "$TAG" \
+              -R "$REPO" \
+              --title "$TAG" \
+              --generate-notes
+          fi
+
   build:
     name: Build (${{ matrix.target }})
+    needs: create-release
     strategy:
       fail-fast: false
       matrix:
         include:
-          # macOS
+          # macOS — native
           - target: aarch64-apple-darwin
             os: macos-14
-          - target: x86_64-apple-darwin
-            os: macos-13
 
-          # Linux (glibc)
+          # Linux glibc — native
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-22.04-arm
 
-          # Linux (musl, static)
+          # Linux musl — cross from x86_64 host (cross does not work on ARM hosts)
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
           - target: aarch64-unknown-linux-musl
-            os: ubuntu-22.04-arm
+            os: ubuntu-latest
 
-          # Linux (32-bit ARM)
+          # Linux 32-bit ARM — cross from x86_64
           - target: armv7-unknown-linux-gnueabihf
             os: ubuntu-latest
 
@@ -81,24 +100,21 @@ jobs:
           echo "TAG=${TAG}" >> "$GITHUB_OUTPUT"
           echo "VERSION=${TAG#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Download macOS binaries from release
+      - name: Download macOS binary from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p dist
           gh release download "${{ steps.version.outputs.TAG }}" \
             --repo "${{ github.repository }}" \
             --pattern "icebox-aarch64-apple-darwin.tar.gz" \
-            --pattern "icebox-x86_64-apple-darwin.tar.gz" \
             --dir dist
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Compute SHA256
         id: sha
         run: |
           ARM64_SHA=$(sha256sum dist/icebox-aarch64-apple-darwin.tar.gz | awk '{print $1}')
-          X86_64_SHA=$(sha256sum dist/icebox-x86_64-apple-darwin.tar.gz | awk '{print $1}')
           echo "ARM64_SHA=${ARM64_SHA}" >> "$GITHUB_OUTPUT"
-          echo "X86_64_SHA=${X86_64_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout homebrew-tap
         uses: actions/checkout@v4
@@ -112,7 +128,6 @@ jobs:
           VERSION="${{ steps.version.outputs.VERSION }}"
           TAG="${{ steps.version.outputs.TAG }}"
           ARM64_SHA="${{ steps.sha.outputs.ARM64_SHA }}"
-          X86_64_SHA="${{ steps.sha.outputs.X86_64_SHA }}"
 
           cat > homebrew-tap/Formula/icebox.rb <<FORMULA
           # Homebrew formula for Icebox — Rust TUI Kanban Board with AI Sidebar
@@ -132,10 +147,6 @@ jobs:
               on_arm do
                 url "https://github.com/SteelCrab/icebox/releases/download/${TAG}/icebox-aarch64-apple-darwin.tar.gz"
                 sha256 "${ARM64_SHA}"
-              end
-              on_intel do
-                url "https://github.com/SteelCrab/icebox/releases/download/${TAG}/icebox-x86_64-apple-darwin.tar.gz"
-                sha256 "${X86_64_SHA}"
               end
             end
 

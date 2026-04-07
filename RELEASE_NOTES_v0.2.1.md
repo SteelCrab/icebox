@@ -1,12 +1,12 @@
 ## What's Changed
 
-📦 Pre-built binaries for Linux (x86_64, aarch64, armv7) and Intel Mac.
+📦 Pre-built binaries for Linux (x86_64, aarch64, armv7).
 
 ### 🆕 Pre-built Binaries
 
-v0.2.0까지는 macOS Apple Silicon만 지원했지만, 이번 릴리즈부터 7개 타겟의 pre-built tar.gz 제공:
+v0.2.0까지는 macOS Apple Silicon만 지원했지만, 이번 릴리즈부터 6개 타겟의 pre-built tar.gz 제공:
 
-- **macOS**: `aarch64-apple-darwin`, `x86_64-apple-darwin`
+- **macOS**: `aarch64-apple-darwin`
 - **Linux glibc**: `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`
 - **Linux musl** (Alpine, scratch container): `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`
 - **Linux 32-bit ARM**: `armv7-unknown-linux-gnueabihf` (Raspberry Pi 2/3)
@@ -15,9 +15,8 @@ v0.2.0까지는 macOS Apple Silicon만 지원했지만, 이번 릴리즈부터 7
 
 ### 🔧 Improvements
 
-- 🛠 Release CI rewritten with `taiki-e/upload-rust-binary-action` matrix (7 parallel builds)
-- 🍺 Homebrew formula now ships both Apple Silicon and Intel Mac blocks
-- 🔁 Tap formula auto-updated via heredoc regeneration on every release
+- 🛠 Release CI rewritten with `taiki-e/upload-rust-binary-action` matrix (6 parallel builds)
+- 🔁 Homebrew tap formula auto-updated via heredoc regeneration on every release
 
 ### 🐛 Fixes
 

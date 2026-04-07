@@ -87,7 +87,6 @@ para tu plataforma desde la [última versión](https://github.com/SteelCrab/iceb
 | Plataforma | Arquitectura | Archivo |
 |---|---|---|
 | macOS | Apple Silicon (arm64) | `icebox-aarch64-apple-darwin.tar.gz` |
-| macOS | Intel (x86_64) | `icebox-x86_64-apple-darwin.tar.gz` |
 | Linux | x86_64 (glibc) | `icebox-x86_64-unknown-linux-gnu.tar.gz` |
 | Linux | x86_64 (musl / Alpine) | `icebox-x86_64-unknown-linux-musl.tar.gz` |
 | Linux | aarch64 (glibc) | `icebox-aarch64-unknown-linux-gnu.tar.gz` |

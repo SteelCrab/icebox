@@ -1,15 +1,16 @@
 # Release automation for Icebox
 #
-# Trigger: push a version tag (e.g. `git tag -a v0.2.0 -m "v0.2.0" && git push origin v0.2.0`)
+# Trigger: push a version tag (e.g. `git tag -a v0.2.1 -m "v0.2.1" && git push origin v0.2.1`)
 #
 # What it does:
-#   1. Build release binary (macOS ARM64)
-#   2. Create GitHub Release with the binary attached
-#   3. Update SteelCrab/homebrew-tap formula (version + url + sha256)
+#   1. Create the GitHub Release (empty, with auto-generated notes)
+#   2. Build release binaries for 7 targets (Linux + macOS) in parallel via matrix
+#      and upload each as a tar.gz to the Release
+#   3. Regenerate SteelCrab/homebrew-tap Formula/icebox.rb (macOS arm64 + x86_64)
 #
 # Requirements:
-#   - Repository secret `TAP_GITHUB_TOKEN`: a personal access token with `repo` scope
-#     for pushing to SteelCrab/homebrew-tap
+#   - Repository secret `TAP_GITHUB_TOKEN`: a fine-grained PAT with
+#     `Contents: Read and write` on SteelCrab/homebrew-tap
 
 name: Release
 
@@ -22,38 +23,99 @@ permissions:
   contents: write
 
 jobs:
-  build-and-release:
-    runs-on: macos-14  # Apple Silicon (M1/M2) runner
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
     steps:
-      # --- Build ---
+      - name: Create release if missing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; skipping create."
+          else
+            gh release create "$TAG" \
+              -R "$REPO" \
+              --title "$TAG" \
+              --generate-notes
+          fi
+
+  build:
+    name: Build (${{ matrix.target }})
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS — native
+          - target: aarch64-apple-darwin
+            os: macos-14
+
+          # Linux glibc — native
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-22.04-arm
+
+          # Linux musl — cross from x86_64 host (cross does not work on ARM hosts)
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+
+          # Linux 32-bit ARM — cross from x86_64
+          - target: armv7-unknown-linux-gnueabihf
+            os: ubuntu-latest
+
+    runs-on: ${{ matrix.os }}
+    steps:
       - name: Checkout source
         uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
-      - name: Build release binary
-        run: cargo build --release
+      - name: Build and upload binary
+        uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: icebox
+          target: ${{ matrix.target }}
+          archive: icebox-$target
+          tar: unix
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      # --- GitHub Release ---
+  update-tap:
+    name: Update Homebrew tap
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
       - name: Extract version from tag
         id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          echo "TAG=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "VERSION=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download macOS binary from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p dist
+          gh release download "${{ steps.version.outputs.TAG }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "icebox-aarch64-apple-darwin.tar.gz" \
+            --dir dist
 
       - name: Compute SHA256
         id: sha
         run: |
-          SHA=$(shasum -a 256 target/release/icebox | awk '{print $1}')
-          echo "SHA256=$SHA" >> "$GITHUB_OUTPUT"
+          ARM64_SHA=$(sha256sum dist/icebox-aarch64-apple-darwin.tar.gz | awk '{print $1}')
+          echo "ARM64_SHA=${ARM64_SHA}" >> "$GITHUB_OUTPUT"
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: "${{ github.ref_name }}"
-          generate_release_notes: true
-          files: target/release/icebox
-
-      # --- Update Homebrew tap ---
       - name: Checkout homebrew-tap
         uses: actions/checkout@v4
         with:
@@ -61,21 +123,42 @@ jobs:
           token: ${{ secrets.TAP_GITHUB_TOKEN }}
           path: homebrew-tap
 
-      - name: Update formula
+      - name: Regenerate formula
         run: |
-          cd homebrew-tap
           VERSION="${{ steps.version.outputs.VERSION }}"
-          SHA="${{ steps.sha.outputs.SHA256 }}"
-          TAG="${{ github.ref_name }}"
+          TAG="${{ steps.version.outputs.TAG }}"
+          ARM64_SHA="${{ steps.sha.outputs.ARM64_SHA }}"
 
-          # Update version
-          sed -i '' "s/version \".*\"/version \"${VERSION}\"/" Formula/icebox.rb
+          cat > homebrew-tap/Formula/icebox.rb <<FORMULA
+          # Homebrew formula for Icebox — Rust TUI Kanban Board with AI Sidebar
+          #
+          # Install:  brew tap SteelCrab/tap && brew install icebox
+          # Upgrade:  brew upgrade icebox
+          #
+          # Auto-generated by GitHub Actions in SteelCrab/icebox on every v* tag push.
 
-          # Update download URL
-          sed -i '' "s|releases/download/v[^/]*/|releases/download/${TAG}/|" Formula/icebox.rb
+          class Icebox < Formula
+            desc "Rust TUI Kanban Board with AI Sidebar"
+            homepage "https://github.com/SteelCrab/icebox"
+            version "${VERSION}"
+            license "Apache-2.0"
 
-          # Update SHA256
-          sed -i '' "s/sha256 \".*\"/sha256 \"${SHA}\"/" Formula/icebox.rb
+            on_macos do
+              on_arm do
+                url "https://github.com/SteelCrab/icebox/releases/download/${TAG}/icebox-aarch64-apple-darwin.tar.gz"
+                sha256 "${ARM64_SHA}"
+              end
+            end
+
+            def install
+              bin.install "icebox"
+            end
+
+            test do
+              assert_match "icebox", shell_output("#{bin}/icebox help")
+            end
+          end
+          FORMULA
 
       - name: Push formula update
         run: |
@@ -83,5 +166,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/icebox.rb
-          git commit -m "Update icebox to ${{ github.ref_name }}"
-          git push
+          if git diff --cached --quiet; then
+            echo "No changes to formula"
+          else
+            git commit -m "Update icebox to ${{ steps.version.outputs.TAG }}"
+            git push
+          fi

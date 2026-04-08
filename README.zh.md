@@ -51,52 +51,76 @@
 
 ## 安装
 
-### 快速安装
+### macOS
+
+#### 快速安装
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SteelCrab/icebox/main/install.sh | bash
 ```
 
-### Homebrew
+#### Homebrew
 
 ```bash
 brew tap SteelCrab/tap
 brew install icebox
 ```
 
-### 源码安装 (cargo install)
+#### 预构建二进制文件 (手动)
+
+从 [最新发布](https://github.com/SteelCrab/icebox/releases/latest) 下载：
+
+| 架构 | 文件 |
+|---|---|
+| Apple Silicon (arm64) | `icebox-aarch64-apple-darwin.tar.gz` |
+
+```bash
+tar -xzf icebox-aarch64-apple-darwin.tar.gz
+chmod +x icebox
+mv icebox ~/.local/bin/    # 或 $PATH 中的任何目录
+```
+
+### Linux
+
+#### 快速安装
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SteelCrab/icebox/main/install.sh | bash
+```
+
+#### 预构建二进制文件 (手动)
+
+从 [最新发布](https://github.com/SteelCrab/icebox/releases/latest) 下载：
+
+| 架构 | libc | 文件 |
+|---|---|---|
+| x86_64 | glibc | `icebox-x86_64-unknown-linux-gnu.tar.gz` |
+| x86_64 | musl (Alpine) | `icebox-x86_64-unknown-linux-musl.tar.gz` |
+| aarch64 | glibc | `icebox-aarch64-unknown-linux-gnu.tar.gz` |
+| aarch64 | musl (Alpine) | `icebox-aarch64-unknown-linux-musl.tar.gz` |
+| armv7 (Raspberry Pi 2/3) | gnueabihf | `icebox-armv7-unknown-linux-gnueabihf.tar.gz` |
+
+```bash
+tar -xzf icebox-<target>.tar.gz
+chmod +x icebox
+mv icebox ~/.local/bin/    # 或 $PATH 中的任何目录
+```
+
+### 源码构建 (任意系统)
+
+#### Cargo 安装
 
 ```bash
 cargo install --git https://github.com/SteelCrab/icebox.git
 ```
 
-### 源码构建
+#### 源码构建
 
 ```bash
 git clone https://github.com/SteelCrab/icebox.git
 cd icebox
 cargo build --release
 cp target/release/icebox ~/.cargo/bin/
-```
-
-### 预构建二进制文件 (手动)
-
-无法使用 `install.sh` 的环境，可从 [最新发布](https://github.com/SteelCrab/icebox/releases/latest)
-直接下载适合您平台的二进制文件：
-
-| 平台 | 架构 | 文件 |
-|---|---|---|
-| macOS | Apple Silicon (arm64) | `icebox-aarch64-apple-darwin.tar.gz` |
-| Linux | x86_64 (glibc) | `icebox-x86_64-unknown-linux-gnu.tar.gz` |
-| Linux | x86_64 (musl / Alpine) | `icebox-x86_64-unknown-linux-musl.tar.gz` |
-| Linux | aarch64 (glibc) | `icebox-aarch64-unknown-linux-gnu.tar.gz` |
-| Linux | aarch64 (musl / Alpine) | `icebox-aarch64-unknown-linux-musl.tar.gz` |
-| Linux | armv7 (Raspberry Pi 2/3) | `icebox-armv7-unknown-linux-gnueabihf.tar.gz` |
-
-```bash
-tar -xzf icebox-<target>.tar.gz
-chmod +x icebox
-mv icebox ~/.local/bin/    # 或 $PATH 中的任何目录
 ```
 
 ## 快速开始

@@ -51,52 +51,76 @@ Rustで構築されたターミナルベースのカンバンボードで、Anth
 
 ## インストール
 
-### クイックインストール
+### macOS
+
+#### クイックインストール
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SteelCrab/icebox/main/install.sh | bash
 ```
 
-### Homebrew
+#### Homebrew
 
 ```bash
 brew tap SteelCrab/tap
 brew install icebox
 ```
 
-### ソースからインストール (cargo install)
+#### ビルド済みバイナリ (手動)
+
+[最新リリース](https://github.com/SteelCrab/icebox/releases/latest) からダウンロード:
+
+| アーキテクチャ | アセット |
+|---|---|
+| Apple Silicon (arm64) | `icebox-aarch64-apple-darwin.tar.gz` |
+
+```bash
+tar -xzf icebox-aarch64-apple-darwin.tar.gz
+chmod +x icebox
+mv icebox ~/.local/bin/    # または $PATH 内の任意のディレクトリ
+```
+
+### Linux
+
+#### クイックインストール
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SteelCrab/icebox/main/install.sh | bash
+```
+
+#### ビルド済みバイナリ (手動)
+
+[最新リリース](https://github.com/SteelCrab/icebox/releases/latest) からダウンロード:
+
+| アーキテクチャ | libc | アセット |
+|---|---|---|
+| x86_64 | glibc | `icebox-x86_64-unknown-linux-gnu.tar.gz` |
+| x86_64 | musl (Alpine) | `icebox-x86_64-unknown-linux-musl.tar.gz` |
+| aarch64 | glibc | `icebox-aarch64-unknown-linux-gnu.tar.gz` |
+| aarch64 | musl (Alpine) | `icebox-aarch64-unknown-linux-musl.tar.gz` |
+| armv7 (Raspberry Pi 2/3) | gnueabihf | `icebox-armv7-unknown-linux-gnueabihf.tar.gz` |
+
+```bash
+tar -xzf icebox-<target>.tar.gz
+chmod +x icebox
+mv icebox ~/.local/bin/    # または $PATH 内の任意のディレクトリ
+```
+
+### ソースからビルド (全OS)
+
+#### Cargoでインストール
 
 ```bash
 cargo install --git https://github.com/SteelCrab/icebox.git
 ```
 
-### ソースビルド
+#### ソースからビルド
 
 ```bash
 git clone https://github.com/SteelCrab/icebox.git
 cd icebox
 cargo build --release
 cp target/release/icebox ~/.cargo/bin/
-```
-
-### ビルド済みバイナリ (手動)
-
-`install.sh` が使えない環境では、[最新リリース](https://github.com/SteelCrab/icebox/releases/latest)から
-プラットフォームに合ったバイナリを直接ダウンロードしてください:
-
-| プラットフォーム | アーキテクチャ | アセット |
-|---|---|---|
-| macOS | Apple Silicon (arm64) | `icebox-aarch64-apple-darwin.tar.gz` |
-| Linux | x86_64 (glibc) | `icebox-x86_64-unknown-linux-gnu.tar.gz` |
-| Linux | x86_64 (musl / Alpine) | `icebox-x86_64-unknown-linux-musl.tar.gz` |
-| Linux | aarch64 (glibc) | `icebox-aarch64-unknown-linux-gnu.tar.gz` |
-| Linux | aarch64 (musl / Alpine) | `icebox-aarch64-unknown-linux-musl.tar.gz` |
-| Linux | armv7 (Raspberry Pi 2/3) | `icebox-armv7-unknown-linux-gnueabihf.tar.gz` |
-
-```bash
-tar -xzf icebox-<target>.tar.gz
-chmod +x icebox
-mv icebox ~/.local/bin/    # または $PATH 内の任意のディレクトリ
 ```
 
 ## クイックスタート

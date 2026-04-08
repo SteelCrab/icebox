@@ -51,52 +51,76 @@ Un tablero kanban basado en terminal construido con Rust, con un asistente AI in
 
 ## Instalación
 
-### Instalación rápida
+### macOS
+
+#### Instalación rápida
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SteelCrab/icebox/main/install.sh | bash
 ```
 
-### Homebrew
+#### Homebrew
 
 ```bash
 brew tap SteelCrab/tap
 brew install icebox
 ```
 
-### Desde fuente (cargo install)
+#### Binario precompilado (manual)
+
+Descarga desde la [última versión](https://github.com/SteelCrab/icebox/releases/latest):
+
+| Arquitectura | Archivo |
+|---|---|
+| Apple Silicon (arm64) | `icebox-aarch64-apple-darwin.tar.gz` |
+
+```bash
+tar -xzf icebox-aarch64-apple-darwin.tar.gz
+chmod +x icebox
+mv icebox ~/.local/bin/    # o cualquier directorio en $PATH
+```
+
+### Linux
+
+#### Instalación rápida
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SteelCrab/icebox/main/install.sh | bash
+```
+
+#### Binarios precompilados (manual)
+
+Descarga desde la [última versión](https://github.com/SteelCrab/icebox/releases/latest):
+
+| Arquitectura | libc | Archivo |
+|---|---|---|
+| x86_64 | glibc | `icebox-x86_64-unknown-linux-gnu.tar.gz` |
+| x86_64 | musl (Alpine) | `icebox-x86_64-unknown-linux-musl.tar.gz` |
+| aarch64 | glibc | `icebox-aarch64-unknown-linux-gnu.tar.gz` |
+| aarch64 | musl (Alpine) | `icebox-aarch64-unknown-linux-musl.tar.gz` |
+| armv7 (Raspberry Pi 2/3) | gnueabihf | `icebox-armv7-unknown-linux-gnueabihf.tar.gz` |
+
+```bash
+tar -xzf icebox-<target>.tar.gz
+chmod +x icebox
+mv icebox ~/.local/bin/    # o cualquier directorio en $PATH
+```
+
+### Desde fuente (cualquier OS)
+
+#### Instalar con Cargo
 
 ```bash
 cargo install --git https://github.com/SteelCrab/icebox.git
 ```
 
-### Compilar desde fuente
+#### Compilar desde fuente
 
 ```bash
 git clone https://github.com/SteelCrab/icebox.git
 cd icebox
 cargo build --release
 cp target/release/icebox ~/.cargo/bin/
-```
-
-### Binarios precompilados (manual)
-
-Para entornos donde `install.sh` no se puede usar, descarga el binario
-para tu plataforma desde la [última versión](https://github.com/SteelCrab/icebox/releases/latest):
-
-| Plataforma | Arquitectura | Archivo |
-|---|---|---|
-| macOS | Apple Silicon (arm64) | `icebox-aarch64-apple-darwin.tar.gz` |
-| Linux | x86_64 (glibc) | `icebox-x86_64-unknown-linux-gnu.tar.gz` |
-| Linux | x86_64 (musl / Alpine) | `icebox-x86_64-unknown-linux-musl.tar.gz` |
-| Linux | aarch64 (glibc) | `icebox-aarch64-unknown-linux-gnu.tar.gz` |
-| Linux | aarch64 (musl / Alpine) | `icebox-aarch64-unknown-linux-musl.tar.gz` |
-| Linux | armv7 (Raspberry Pi 2/3) | `icebox-armv7-unknown-linux-gnueabihf.tar.gz` |
-
-```bash
-tar -xzf icebox-<target>.tar.gz
-chmod +x icebox
-mv icebox ~/.local/bin/    # o cualquier directorio en $PATH
 ```
 
 ## Inicio rápido

@@ -21,7 +21,7 @@ registry — the tab bar auto-collects unique swimlane names from your current t
 - Tasks without a swimlane only appear under "All".
 - A tab disappears the moment its last task is renamed or cleared.
 
-![Swimlane bar](../images/icebox-swimlane-bar.png)
+![Swimlane bar](../videos/icebox-swimlane.gif)
 
 ## Quick Start
 
@@ -54,7 +54,7 @@ Open the task detail view (`Enter`) and press `s`, or run:
 /swimlane clear
 ```
 
-![/swimlane demo](../videos/icebox-swimlane.gif)
+![/swimlane demo](../videos/icebox-swimlane-clear.gif)
 
 ## Slash Commands
 

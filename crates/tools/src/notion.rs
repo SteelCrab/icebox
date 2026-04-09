@@ -381,6 +381,19 @@ impl NotionClient {
         Ok(tasks)
     }
 
+    /// Ensure the database has all expected properties, adding any that are missing.
+    /// Notion PATCH ignores properties that already exist.
+    fn ensure_schema(&self, database_id: &str) -> Result<()> {
+        let body = json!({
+            "properties": {
+                "Swimlane": { "rich_text": {} },
+                "Progress": { "rich_text": {} }
+            }
+        });
+        self.patch(&format!("/databases/{database_id}"), &body)?;
+        Ok(())
+    }
+
     /// Sync all tasks to a Notion database, creating or updating as needed.
     ///
     /// Builds a mapping of existing `Task ID` properties to Notion page IDs,
@@ -390,6 +403,7 @@ impl NotionClient {
     /// Returns an error if the initial database query fails. Individual task
     /// sync failures are collected in [`SyncResult::errors`].
     pub fn sync_tasks(&self, database_id: &str, tasks: &[Task]) -> Result<SyncResult> {
+        self.ensure_schema(database_id)?;
         let existing = self.query_all_pages(database_id)?;
         let id_map = build_page_id_map(&existing);
         let mut result = SyncResult::default();
@@ -472,13 +486,12 @@ fn build_properties(task: &Task) -> Result<Value> {
         );
     }
 
-    // Swimlane
-    if let Some(ref lane) = task.swimlane {
-        obj.insert(
-            "Swimlane".into(),
-            json!({ "rich_text": [{ "text": { "content": lane } }] }),
-        );
-    }
+    // Swimlane: None → "All"
+    let lane = task.swimlane.as_deref().unwrap_or("All");
+    obj.insert(
+        "Swimlane".into(),
+        json!({ "rich_text": [{ "text": { "content": lane } }] }),
+    );
 
     // Progress
     if let Some(prog) = &task.progress {
@@ -743,7 +756,8 @@ fn page_to_task(page: &Value) -> Option<Task> {
         })
     });
 
-    let swimlane = extract_rich_text_property(page, "Swimlane").filter(|s| !s.is_empty());
+    let swimlane =
+        extract_rich_text_property(page, "Swimlane").filter(|s| !s.is_empty() && s != "All");
 
     let created_at = extract_date_property(page, "Created At")
         .or_else(|| {

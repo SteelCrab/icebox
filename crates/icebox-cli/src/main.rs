@@ -23,6 +23,7 @@ fn main() -> Result<()> {
         Some("logout") => return run_logout(),
         Some("whoami") => return run_whoami(),
         Some("test-api") => return run_test_api(),
+        Some("notion") => return run_notion(&args),
         Some("init") => return run_init(&args),
         Some("help") | Some("--help") | Some("-h") => {
             print_help();
@@ -55,6 +56,7 @@ fn print_help() {
     println!("  icebox login          Authenticate via OAuth (opens browser)");
     println!("  icebox logout         Clear saved credentials");
     println!("  icebox whoami         Show current authentication status");
+    println!("  icebox notion         Show Notion integration setup guide");
     println!("  icebox help           Show this help message");
     println!();
     println!("AUTHENTICATION (recommended: API key):");
@@ -429,7 +431,390 @@ fn run_init(args: &[String]) -> Result<()> {
     if fresh {
         println!("Initialized icebox workspace at {}", icebox_dir.display());
     } else {
-        println!("Icebox workspace already exists at {}", icebox_dir.display());
+        println!(
+            "Icebox workspace already exists at {}",
+            icebox_dir.display()
+        );
+    }
+
+    Ok(())
+}
+
+// ── Notion ──
+
+const SPINNER_FRAMES: &[char] = &['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'];
+
+struct Spinner {
+    stop: Arc<std::sync::atomic::AtomicBool>,
+    handle: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Spinner {
+    fn start(label: &'static str) -> Self {
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stop_clone = stop.clone();
+        let handle = std::thread::spawn(move || {
+            use std::io::Write;
+            let mut idx = 0usize;
+            while !stop_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                let frame = SPINNER_FRAMES
+                    .get(idx % SPINNER_FRAMES.len())
+                    .copied()
+                    .unwrap_or(' ');
+                print!("\r\x1b[2K{frame} {label}...");
+                let _ = io::stdout().flush();
+                idx = idx.wrapping_add(1);
+                std::thread::sleep(std::time::Duration::from_millis(80));
+            }
+            print!("\r\x1b[2K");
+            let _ = io::stdout().flush();
+        });
+        Self {
+            stop,
+            handle: Some(handle),
+        }
+    }
+
+    fn stop(mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Some(h) = self.handle.take() {
+            let _ = h.join();
+        }
+    }
+}
+
+impl Drop for Spinner {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Some(h) = self.handle.take() {
+            let _ = h.join();
+        }
+    }
+}
+
+fn run_notion(args: &[String]) -> Result<()> {
+    let subcmd = args.get(2).map(|s| s.as_str()).unwrap_or("");
+
+    match subcmd {
+        "push" => notion_cli_push(args.get(3).map(|s| s.as_str())),
+        "pull" => notion_cli_pull(),
+        "status" => notion_cli_status(),
+        "reset" => notion_cli_reset(),
+        _ => notion_cli_help(),
+    }
+}
+
+fn notion_cli_help() -> Result<()> {
+    let config = icebox_runtime::IceboxConfig::load();
+    let has_env_key = std::env::var("NOTION_API_KEY")
+        .map(|k| !k.is_empty())
+        .unwrap_or(false);
+    let has_config_key = config
+        .notion
+        .as_ref()
+        .and_then(|n| n.api_key.as_ref())
+        .is_some();
+    let has_db = config
+        .notion
+        .as_ref()
+        .and_then(|n| n.database_id.as_ref())
+        .is_some();
+
+    println!("Notion Integration");
+    println!("──────────────────");
+
+    if has_env_key {
+        print!("  API Key: env (NOTION_API_KEY)");
+    } else if has_config_key {
+        print!("  API Key: config.json");
+    } else {
+        println!("  API Key: not configured");
+    }
+
+    if has_env_key || has_config_key {
+        let config_key = config
+            .notion
+            .as_ref()
+            .and_then(|n| n.api_key.as_deref())
+            .map(String::from);
+        match icebox_tools::notion::NotionClient::from_env(config_key.as_deref()) {
+            Ok(client) => match client.verify_key() {
+                Ok(name) => println!(" — valid (bot: {name})"),
+                Err(e) => println!(" — invalid ({e})"),
+            },
+            Err(e) => println!(" — error ({e})"),
+        }
+    }
+
+    if has_db {
+        let db_id = config
+            .notion
+            .as_ref()
+            .and_then(|n| n.database_id.as_deref())
+            .unwrap_or("-");
+        println!("  Database: {db_id}");
+    } else {
+        println!("  Database: not configured");
+    }
+
+    println!();
+    println!("Setup:");
+    println!("  1. Create an integration at https://www.notion.so/my-integrations");
+    println!("  2. Add NOTION_API_KEY to your shell profile:");
+    println!("     # zsh");
+    println!("     echo 'export NOTION_API_KEY=ntn_...' >> ~/.zshrc");
+    println!("     # bash");
+    println!("     echo 'export NOTION_API_KEY=ntn_...' >> ~/.bashrc");
+    println!("     # fish");
+    println!("     set -Ux NOTION_API_KEY ntn_...");
+    println!("  3. Invite the integration to your Notion page");
+    println!("  4. icebox notion push <page-name>");
+
+    println!();
+    println!("Commands:");
+    println!("  icebox notion push [page]   Sync local tasks → Notion");
+    println!("  icebox notion pull          Sync Notion → local tasks (apply changes from Notion)");
+    println!("  icebox notion status        Show connection status");
+    println!("  icebox notion reset         Clear configuration");
+
+    Ok(())
+}
+
+fn notion_cli_status() -> Result<()> {
+    let config = icebox_runtime::IceboxConfig::load();
+    let config_api_key = config
+        .notion
+        .as_ref()
+        .and_then(|n| n.api_key.as_deref())
+        .map(String::from);
+
+    // API Key source
+    let has_env_key = std::env::var("NOTION_API_KEY")
+        .map(|k| !k.is_empty())
+        .unwrap_or(false);
+    let has_config_key = config_api_key.is_some();
+
+    if has_env_key {
+        print!("  API Key: env (NOTION_API_KEY)");
+    } else if has_config_key {
+        print!("  API Key: config.json");
+    } else {
+        println!("  API Key: not configured");
+        println!("Run `icebox notion` for setup instructions.");
+        return Ok(());
+    }
+
+    // Verify key
+    match icebox_tools::notion::NotionClient::from_env(config_api_key.as_deref()) {
+        Ok(client) => match client.verify_key() {
+            Ok(name) => println!(" — valid (bot: {name})"),
+            Err(e) => println!(" — invalid ({e})"),
+        },
+        Err(e) => println!(" — error ({e})"),
+    }
+
+    // Database
+    match config.notion {
+        Some(ref n) if n.database_id.is_some() => {
+            println!("  Database: {}", n.database_id.as_deref().unwrap_or("-"));
+        }
+        _ => {
+            println!("  Database: not configured");
+        }
+    }
+
+    Ok(())
+}
+
+fn notion_cli_reset() -> Result<()> {
+    let mut config = icebox_runtime::IceboxConfig::load();
+    if config.notion.is_none() {
+        println!("Nothing to reset.");
+        return Ok(());
+    }
+    config.notion = None;
+    config.save().context("Failed to save config")?;
+    println!("Notion configuration cleared.");
+    Ok(())
+}
+
+fn notion_db_url(db_id: &str) -> String {
+    format!("https://www.notion.so/{}", db_id.replace('-', ""))
+}
+
+fn notion_cli_push(page_name: Option<&str>) -> Result<()> {
+    let config = icebox_runtime::IceboxConfig::load();
+    let config_api_key = config
+        .notion
+        .as_ref()
+        .and_then(|n| n.api_key.as_deref())
+        .map(String::from);
+
+    let client = icebox_tools::notion::NotionClient::from_env(config_api_key.as_deref())
+        .context("NOTION_API_KEY not set. Run `icebox notion` for setup instructions.")?;
+
+    let workspace = env::current_dir().context("failed to get current directory")?;
+    let store = icebox_task::store::TaskStore::open(&workspace)?;
+    let tasks = store.list().unwrap_or_default();
+
+    // If we have a database_id and no page selector, sync directly
+    if page_name.is_none()
+        && let Some(ref n) = config.notion
+        && let Some(ref db_id) = n.database_id
+    {
+        let spinner = Spinner::start("Syncing to Notion");
+        let result = client.sync_tasks(db_id, &tasks);
+        spinner.stop();
+        let result = result?;
+        println!("{result}");
+        println!("  → {}", notion_db_url(db_id));
+        return Ok(());
+    }
+
+    // Search for page
+    let query = page_name.unwrap_or("");
+    if query.is_empty() {
+        println!("No database configured. Specify a page name:");
+        println!("  icebox notion push <page-name>");
+        return Ok(());
+    }
+
+    let spinner = Spinner::start("Searching Notion pages");
+    let search_result = client.search_pages(query);
+    spinner.stop();
+    let pages = search_result?;
+
+    if pages.is_empty() {
+        println!("No Notion pages matching '{query}'.");
+        println!();
+        println!("Make sure the integration is invited to the page:");
+        println!("  1. Open the Notion page you want to connect");
+        println!("  2. Click '...' in the top-right corner");
+        println!("  3. Go to 'Connections' and add your integration");
+        println!("  4. Run `icebox notion push <page-name>` again");
+        return Ok(());
+    }
+
+    // Use first match
+    let page = &pages[0];
+    println!("Found: {} ({})", page.title, page.id);
+
+    let spinner = Spinner::start("Creating Notion database");
+
+    let create_result = client.create_database(&page.id);
+    spinner.stop();
+    let db_id = create_result?;
+    println!("Database created: {db_id}");
+
+    // Save config
+    icebox_runtime::IceboxConfig::save_notion(&db_id, &page.id)?;
+
+    // Sync
+    let spinner = Spinner::start("Syncing tasks to Notion");
+    let sync_result = client.sync_tasks(&db_id, &tasks);
+    spinner.stop();
+    let result = sync_result?;
+    println!("{result}");
+    println!("  → {}", notion_db_url(&db_id));
+
+    Ok(())
+}
+
+fn notion_cli_pull() -> Result<()> {
+    let config = icebox_runtime::IceboxConfig::load();
+    let config_api_key = config
+        .notion
+        .as_ref()
+        .and_then(|n| n.api_key.as_deref())
+        .map(String::from);
+
+    let db_id = config
+        .notion
+        .as_ref()
+        .and_then(|n| n.database_id.as_deref())
+        .context("No database configured. Run `icebox notion push <page-name>` first.")?
+        .to_owned();
+
+    let client = icebox_tools::notion::NotionClient::from_env(config_api_key.as_deref())
+        .context("NOTION_API_KEY not set. Run `icebox notion` for setup instructions.")?;
+
+    let workspace = env::current_dir().context("failed to get current directory")?;
+    let store = icebox_task::store::TaskStore::open(&workspace)?;
+
+    let spinner = Spinner::start("Pulling from Notion");
+    let pull_result = client.pull_tasks(&db_id);
+    spinner.stop();
+    let remote_tasks = pull_result?;
+    println!("Found {} tasks in Notion", remote_tasks.len());
+
+    let local_tasks = store.list().unwrap_or_default();
+    let local_map: std::collections::HashMap<String, icebox_task::model::Task> =
+        local_tasks.into_iter().map(|t| (t.id.clone(), t)).collect();
+
+    let mut created = 0;
+    let mut updated = 0;
+    let mut unchanged = 0;
+    let mut errors: Vec<String> = Vec::new();
+    let mut remote_ids = std::collections::HashSet::new();
+
+    for (mut remote, last_edited) in remote_tasks {
+        remote_ids.insert(remote.id.clone());
+
+        // Parse Notion's last_edited_time as authoritative update time
+        if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&last_edited) {
+            remote.updated_at = dt.with_timezone(&chrono::Utc);
+        }
+
+        match local_map.get(&remote.id) {
+            None => match store.save(&remote) {
+                Ok(()) => created += 1,
+                Err(e) => errors.push(format!("{}: {e}", remote.id)),
+            },
+            Some(local) => {
+                if remote.updated_at > local.updated_at {
+                    match store.save(&remote) {
+                        Ok(()) => updated += 1,
+                        Err(e) => errors.push(format!("{}: {e}", remote.id)),
+                    }
+                } else {
+                    unchanged += 1;
+                }
+            }
+        }
+    }
+
+    // Delete local tasks missing from Notion (Notion is source of truth)
+    let mut deleted = 0;
+    let mut deleted_titles: Vec<String> = Vec::new();
+    for (id, local) in &local_map {
+        if !remote_ids.contains(id) {
+            match store.delete(id) {
+                Ok(()) => {
+                    deleted += 1;
+                    deleted_titles.push(local.title.clone());
+                }
+                Err(e) => errors.push(format!("delete {id}: {e}")),
+            }
+        }
+    }
+
+    println!(
+        "Pull complete: {created} created, {updated} updated, {unchanged} unchanged, {deleted} deleted"
+    );
+    println!("  → {}", notion_db_url(&db_id));
+    if !deleted_titles.is_empty() {
+        println!();
+        println!("Deleted locally (removed from Notion):");
+        for title in &deleted_titles {
+            println!("  - {title}");
+        }
+    }
+    if !errors.is_empty() {
+        println!();
+        println!("Errors:");
+        for e in &errors {
+            println!("  {e}");
+        }
     }
 
     Ok(())
@@ -554,7 +939,7 @@ fn setup_ai_runtime(app: &mut App, workspace: &std::path::Path) {
                  - grep_search: Search file contents with regex\n\
                  - list_tasks: List all kanban tasks by column\n\
                  - create_task: Create a new task\n\
-                 - update_task: Update an existing task (title, priority, tags, swimlane, start_date, due_date, body)\n\
+                 - update_task: Update an existing task (title, priority, tags, start_date, due_date, body)\n\
                  - move_task: Move a task to another column\n\
                  - save_memory / list_memories / delete_memory: Persistent memory\n\
                  \n\
@@ -681,10 +1066,9 @@ fn setup_ai_runtime(app: &mut App, workspace: &std::path::Path) {
         });
     });
 
-    let sender: icebox_tui::app::AiSender =
-        Box::new(move |cmd: icebox_runtime::RuntimeCommand| {
-            let _ = cmd_tx.send(cmd);
-        });
+    let sender: icebox_tui::app::AiSender = Box::new(move |cmd: icebox_runtime::RuntimeCommand| {
+        let _ = cmd_tx.send(cmd);
+    });
 
     app.set_ai_channel(tui_rx, sender, approval_tx);
 }

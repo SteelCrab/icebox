@@ -38,9 +38,7 @@ static SESSION_ID: LazyLock<String> = LazyLock::new(generate_uuid_v4_hex);
 
 pub fn is_beta_excluded(model: &str, beta: &str) -> bool {
     match EXCLUDED_BETAS.lock() {
-        Ok(store) => store
-            .get(model)
-            .is_some_and(|set| set.contains(beta)),
+        Ok(store) => store.get(model).is_some_and(|set| set.contains(beta)),
         Err(_) => false,
     }
 }
@@ -57,8 +55,7 @@ pub fn get_model_betas<'a>(model: &str, excluded: Option<&BTreeSet<String>>) -> 
     let mut betas: Vec<&str> = REQUIRED_BETAS
         .iter()
         .filter(|beta| {
-            excluded.is_none_or(|ex| !ex.contains(**beta))
-                && !is_beta_excluded(model, beta)
+            excluded.is_none_or(|ex| !ex.contains(**beta)) && !is_beta_excluded(model, beta)
         })
         .copied()
         .collect();
@@ -127,11 +124,22 @@ fn generate_uuid_v4_hex() -> String {
     bytes[8] = (bytes[8] & 0x3F) | 0x80;
     format!(
         "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        bytes[0], bytes[1], bytes[2], bytes[3],
-        bytes[4], bytes[5],
-        bytes[6], bytes[7],
-        bytes[8], bytes[9],
-        bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
+        bytes[0],
+        bytes[1],
+        bytes[2],
+        bytes[3],
+        bytes[4],
+        bytes[5],
+        bytes[6],
+        bytes[7],
+        bytes[8],
+        bytes[9],
+        bytes[10],
+        bytes[11],
+        bytes[12],
+        bytes[13],
+        bytes[14],
+        bytes[15],
     )
 }
 
@@ -173,10 +181,7 @@ pub fn set_oauth_headers(
         "x-client-request-id",
         header_value(&generate_uuid_v4_hex())?,
     );
-    headers.insert(
-        "x-claude-code-session-id",
-        header_value(&SESSION_ID)?,
-    );
+    headers.insert("x-claude-code-session-id", header_value(&SESSION_ID)?);
     headers.remove("x-api-key");
     Ok(())
 }
@@ -314,10 +319,7 @@ mod tests {
         assert!(result.contains("prompt-caching-scope-2026-01-05"));
         assert!(result.contains("context-management-2025-06-27"));
         assert!(result.contains("custom-beta"));
-        assert_eq!(
-            result.matches("oauth-2025-04-20").count(),
-            1
-        );
+        assert_eq!(result.matches("oauth-2025-04-20").count(), 1);
     }
 
     #[test]
@@ -355,7 +357,11 @@ mod tests {
         };
         prefix_tool_names(&mut request);
         assert_eq!(
-            request.tools.as_ref().and_then(|t| t.first()).map(|t| t.name.as_str()),
+            request
+                .tools
+                .as_ref()
+                .and_then(|t| t.first())
+                .map(|t| t.name.as_str()),
             Some("mcp_bash")
         );
 

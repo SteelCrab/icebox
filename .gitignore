@@ -4,8 +4,9 @@
 .codex/
 .DS_Store
 logs/
-site/node_modules/
-site/apps/*/dist/
-site/apps/*/node_modules/
-site/dist/
+
+# AI DOC
+AGENTS.md
+CLAUDE.md
+
 npm-debug.log*

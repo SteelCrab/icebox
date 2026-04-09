@@ -372,10 +372,7 @@ impl AnthropicClient {
             "anthropic-version",
             HeaderValue::from_static(ANTHROPIC_VERSION),
         );
-        headers.insert(
-            "content-type",
-            HeaderValue::from_static("application/json"),
-        );
+        headers.insert("content-type", HeaderValue::from_static("application/json"));
 
         let mut body = request.clone();
         for plugin in self.plugins.iter() {
@@ -416,11 +413,7 @@ impl AnthropicClient {
                         if let ApiError::Api {
                             status, ref body, ..
                         } = error
-                            && self.retry_without_long_context_beta(
-                                request,
-                                status.as_u16(),
-                                body,
-                            )
+                            && self.retry_without_long_context_beta(request, status.as_u16(), body)
                         {
                             continue;
                         }

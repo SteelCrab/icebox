@@ -19,3 +19,4 @@ glob = { workspace = true }
 regex = { workspace = true }
 walkdir = { workspace = true }
 anyhow = { workspace = true }
+reqwest = { workspace = true }

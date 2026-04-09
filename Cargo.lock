@@ -549,9 +549,10 @@ dependencies = [
 
 [[package]]
 name = "icebox"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "crossterm",
  "icebox-api",
  "icebox-runtime",
@@ -566,7 +567,7 @@ dependencies = [
 
 [[package]]
 name = "icebox-api"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "reqwest",
@@ -578,14 +579,14 @@ dependencies = [
 
 [[package]]
 name = "icebox-commands"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
 ]
 
 [[package]]
 name = "icebox-runtime"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -600,7 +601,7 @@ dependencies = [
 
 [[package]]
 name = "icebox-task"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -614,7 +615,7 @@ dependencies = [
 
 [[package]]
 name = "icebox-tools"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -623,6 +624,7 @@ dependencies = [
  "icebox-runtime",
  "icebox-task",
  "regex",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",
@@ -631,7 +633,7 @@ dependencies = [
 
 [[package]]
 name = "icebox-tui"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -639,6 +641,7 @@ dependencies = [
  "icebox-commands",
  "icebox-runtime",
  "icebox-task",
+ "icebox-tools",
  "ratatui",
  "serde",
  "serde_json",

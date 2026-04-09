@@ -7,6 +7,7 @@ use crossterm::event;
 use icebox_runtime::{AiEvent, RuntimeCommand};
 use icebox_task::model::{Column, Priority, Task};
 use icebox_task::store::TaskStore;
+use icebox_tools::notion::NotionPage;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
@@ -14,8 +15,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Padding, Paragraph};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use unicode_width::UnicodeWidthStr;
 use tokio::sync::mpsc;
+use unicode_width::UnicodeWidthStr;
 
 /// Braille spinner frames for AI thinking animation (from openpista pattern).
 pub const SPINNER_FRAMES: &[char] = &['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'];
@@ -122,6 +123,11 @@ pub struct App {
     // Scroll debounce
     pub last_board_scroll: Option<Instant>,
 
+    // Notion integration
+    pub notify_rx: Option<std::sync::mpsc::Receiver<String>>,
+    pub notion_pages_cache: Vec<NotionPage>,
+    pub notion_busy: Option<String>,
+
     // Create task state
     pub create_input: String,
     pub create_tags: String,
@@ -163,9 +169,11 @@ fn parse_date_input(input: &str) -> Option<chrono::DateTime<chrono::Utc>> {
     }
     // Try YYYY-MM-DD first
     if let Ok(naive) = chrono::NaiveDate::parse_from_str(trimmed, "%Y-%m-%d") {
-        let dt = naive
-            .and_hms_opt(0, 0, 0)?;
-        return Some(chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc));
+        let dt = naive.and_hms_opt(0, 0, 0)?;
+        return Some(chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
+            dt,
+            chrono::Utc,
+        ));
     }
     // Try full ISO8601 / RFC3339
     chrono::DateTime::parse_from_rfc3339(trimmed)
@@ -226,7 +234,11 @@ impl App {
             .ok()
             .and_then(|o| {
                 let branch = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                if branch.is_empty() { None } else { Some(branch) }
+                if branch.is_empty() {
+                    None
+                } else {
+                    Some(branch)
+                }
             });
         Ok(Self {
             mode: AppMode::Board,
@@ -277,6 +289,9 @@ impl App {
             create_priority_idx: 1,
             spinner_tick: 0,
             last_board_scroll: None,
+            notify_rx: None,
+            notion_pages_cache: Vec::new(),
+            notion_busy: None,
         })
     }
 
@@ -300,8 +315,9 @@ impl App {
 
             // Poll AI events (non-blocking)
             self.drain_ai_events();
+            self.drain_notify_events();
 
-            if self.ai_busy {
+            if self.ai_busy || self.notion_busy.is_some() {
                 self.spinner_tick = self.spinner_tick.wrapping_add(1);
             }
 
@@ -504,14 +520,14 @@ impl App {
                         if self.sidebar_focused && !self.bottom_chat_focused {
                             // Input cursor: chat_area bottom - input border
                             if let Some(chat_rect) = self.sidebar.chat_rect {
-                                let input_y =
-                                    chat_rect.y + chat_rect.height.saturating_sub(3);
-                                let display_width =
-                                    self.sidebar.input.get(..self.sidebar.cursor_pos)
-                                        .map_or(0, UnicodeWidthStr::width);
-                                let input_x = chat_rect.x
-                                    + 2
-                                    + u16::try_from(display_width).unwrap_or(0);
+                                let input_y = chat_rect.y + chat_rect.height.saturating_sub(3);
+                                let display_width = self
+                                    .sidebar
+                                    .input
+                                    .get(..self.sidebar.cursor_pos)
+                                    .map_or(0, UnicodeWidthStr::width);
+                                let input_x =
+                                    chat_rect.x + 2 + u16::try_from(display_width).unwrap_or(0);
                                 frame.set_cursor_position((input_x, input_y));
                             }
                         }
@@ -530,10 +546,12 @@ impl App {
 
             if self.bottom_chat_focused {
                 let input_y = chat_area.y + chat_area.height.saturating_sub(2);
-                let display_width = self.bottom_chat.input.get(..self.bottom_chat.cursor_pos)
+                let display_width = self
+                    .bottom_chat
+                    .input
+                    .get(..self.bottom_chat.cursor_pos)
                     .map_or(0, UnicodeWidthStr::width);
-                let input_x =
-                    chat_area.x + 4 + u16::try_from(display_width).unwrap_or(0);
+                let input_x = chat_area.x + 4 + u16::try_from(display_width).unwrap_or(0);
                 frame.set_cursor_position((input_x, input_y));
             }
         }
@@ -569,9 +587,11 @@ impl App {
             frame.render_widget(block, modal_area);
 
             let tool_display: String = pending.tool_name.chars().take(20).collect();
-            let input_display: String = pending.tool_input.chars().take(
-                inner.width.saturating_sub(2) as usize,
-            ).collect();
+            let input_display: String = pending
+                .tool_input
+                .chars()
+                .take(inner.width.saturating_sub(2) as usize)
+                .collect();
 
             let lines = vec![
                 Line::from(vec![
@@ -586,11 +606,26 @@ impl App {
                 Line::from(Span::styled(input_display, theme::dim_style())),
                 Line::from(""),
                 Line::from(vec![
-                    Span::styled(" 1", Style::default().fg(ratatui::style::Color::Green).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        " 1",
+                        Style::default()
+                            .fg(ratatui::style::Color::Green)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                     Span::raw(":Yes  "),
-                    Span::styled("2", Style::default().fg(ratatui::style::Color::Cyan).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        "2",
+                        Style::default()
+                            .fg(ratatui::style::Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                     Span::raw(":Always  "),
-                    Span::styled("3", Style::default().fg(ratatui::style::Color::Red).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        "3",
+                        Style::default()
+                            .fg(ratatui::style::Color::Red)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                     Span::raw(":No"),
                 ]),
             ];
@@ -693,18 +728,17 @@ impl App {
 
     fn render_memory_view(&self, layout: &AppLayout, frame: &mut Frame) {
         // Use all column areas merged as the main content area
-        let area = if let (Some(first), Some(last)) =
-            (layout.columns.first(), layout.columns.last())
-        {
-            Rect::new(
-                first.x,
-                first.y,
-                last.x + last.width - first.x,
-                first.height,
-            )
-        } else {
-            return;
-        };
+        let area =
+            if let (Some(first), Some(last)) = (layout.columns.first(), layout.columns.last()) {
+                Rect::new(
+                    first.x,
+                    first.y,
+                    last.x + last.width - first.x,
+                    first.height,
+                )
+            } else {
+                return;
+            };
 
         let block = Block::default()
             .title(" Memory ")
@@ -718,10 +752,7 @@ impl App {
         if self.memory_entries.is_empty() {
             let help = Paragraph::new(vec![
                 Line::from(""),
-                Line::from(Span::styled(
-                    "No memories saved yet.",
-                    theme::dim_style(),
-                )),
+                Line::from(Span::styled("No memories saved yet.", theme::dim_style())),
                 Line::from(""),
                 Line::from(Span::styled(
                     "Use /remember <text> in chat to save a memory.",
@@ -813,6 +844,20 @@ impl App {
                 Span::raw(" ")
             },
         ];
+
+        // Notion busy indicator — takes precedence over regular status message
+        if let Some(label) = &self.notion_busy {
+            let spinner = spinner_char(self.spinner_tick);
+            spans.push(Span::styled(
+                format!("{spinner} {label}..."),
+                Style::default()
+                    .fg(ratatui::style::Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            let status = Line::from(spans);
+            frame.render_widget(Paragraph::new(status), layout.status_bar);
+            return;
+        }
 
         match &self.status_message {
             Some(msg) if msg.is_error => {
@@ -910,8 +955,8 @@ impl App {
         // Cursor position
         match self.edit_field {
             EditField::Title => {
-                let cx =
-                    title_inner.x + u16::try_from(UnicodeWidthStr::width(self.edit_title.as_str())).unwrap_or(0);
+                let cx = title_inner.x
+                    + u16::try_from(UnicodeWidthStr::width(self.edit_title.as_str())).unwrap_or(0);
                 frame.set_cursor_position((cx, title_inner.y));
             }
             EditField::Body => {
@@ -1108,11 +1153,8 @@ impl App {
 
         if self.bottom_chat_focused {
             block = block.title_bottom(
-                Line::from(Span::styled(
-                    " Ctrl+↑↓: resize ",
-                    theme::dim_style(),
-                ))
-                .alignment(ratatui::layout::Alignment::Right),
+                Line::from(Span::styled(" Ctrl+↑↓: resize ", theme::dim_style()))
+                    .alignment(ratatui::layout::Alignment::Right),
             );
         }
 
@@ -1145,10 +1187,7 @@ impl App {
             match msg.role {
                 MessageRole::User => {
                     lines.push(Line::from(vec![
-                        Span::styled(
-                            "⏺ ",
-                            Style::default().fg(ratatui::style::Color::Cyan),
-                        ),
+                        Span::styled("⏺ ", Style::default().fg(ratatui::style::Color::Cyan)),
                         Span::styled(
                             &msg.content,
                             Style::default()
@@ -1289,7 +1328,10 @@ impl App {
         let area = frame.area();
         // +2 for border top/bottom
         let content_h = lines.len() as u16 + 2;
-        let max_h = anchor_rect.y.saturating_sub(area.y).min(area.height.saturating_sub(4));
+        let max_h = anchor_rect
+            .y
+            .saturating_sub(area.y)
+            .min(area.height.saturating_sub(4));
         let popup_h = content_h.min(max_h).max(4);
         let popup_w = 60.min(area.width.saturating_sub(2));
 
@@ -1371,9 +1413,8 @@ impl App {
         let inner = block.inner(modal_area);
         frame.render_widget(block, modal_area);
 
-        let cursor = |field: CreateField| -> &str {
-            if self.create_field == field { "_" } else { "" }
-        };
+        let cursor =
+            |field: CreateField| -> &str { if self.create_field == field { "_" } else { "" } };
         let label_style = |field: CreateField| -> Style {
             if self.create_field == field {
                 Style::default().fg(ratatui::style::Color::Cyan)
@@ -1700,6 +1741,638 @@ impl App {
         }
     }
 
+    fn handle_notion_command(&mut self, action: Option<String>) {
+        let action_str = action.as_deref().unwrap_or("").trim();
+
+        // Parse subcommand
+        let (subcmd, arg) = match action_str.split_once(' ') {
+            Some((cmd, rest)) => (cmd.trim(), Some(rest.trim())),
+            None => (action_str, None),
+        };
+
+        match subcmd {
+            "push" => self.notion_push(arg),
+            "pull" => self.notion_pull(),
+            "status" => self.notion_status(),
+            "reset" => self.notion_reset(),
+            "" => {
+                let config = icebox_runtime::IceboxConfig::load();
+                let has_env_key = std::env::var("NOTION_API_KEY")
+                    .map(|k| !k.is_empty())
+                    .unwrap_or(false);
+                let has_config_key = config
+                    .notion
+                    .as_ref()
+                    .and_then(|n| n.api_key.as_ref())
+                    .is_some();
+                let has_db = config
+                    .notion
+                    .as_ref()
+                    .and_then(|n| n.database_id.as_ref())
+                    .is_some();
+
+                // Verify API key if present
+                let key_source = if has_env_key {
+                    Some("env (NOTION_API_KEY)")
+                } else if has_config_key {
+                    Some("config.json")
+                } else {
+                    None
+                };
+
+                let key_status = match key_source {
+                    Some(source) => {
+                        let config_key = config
+                            .notion
+                            .as_ref()
+                            .and_then(|n| n.api_key.as_deref())
+                            .map(String::from);
+                        match icebox_tools::notion::NotionClient::from_env(config_key.as_deref()) {
+                            Ok(client) => match client.verify_key() {
+                                Ok(name) => {
+                                    format!("  API Key: {source} — valid (bot: {name})")
+                                }
+                                Err(e) => format!("  API Key: {source} — invalid ({e})"),
+                            },
+                            Err(e) => format!("  API Key: {source} — error ({e})"),
+                        }
+                    }
+                    None => "  API Key: not configured".to_string(),
+                };
+
+                let db_status = if has_db {
+                    let db_id = config
+                        .notion
+                        .as_ref()
+                        .and_then(|n| n.database_id.as_deref())
+                        .unwrap_or("-");
+                    format!("  Database: {db_id}")
+                } else {
+                    "  Database: not configured".to_string()
+                };
+
+                let setup_guide = "\n[Setup]\n\
+                     1. Create an integration at https://www.notion.so/my-integrations\n\
+                     2. Add NOTION_API_KEY to your shell profile:\n\
+                        zsh:  echo 'export NOTION_API_KEY=ntn_...' >> ~/.zshrc\n\
+                        bash: echo 'export NOTION_API_KEY=ntn_...' >> ~/.bashrc\n\
+                        fish: set -Ux NOTION_API_KEY ntn_...\n\
+                     3. Invite the integration to your Notion page\n\
+                     4. Run /notion push <page-name> to start syncing";
+
+                let content = format!(
+                    "Notion Integration\n\
+                     {key_status}\n\
+                     {db_status}\n\
+                     {setup_guide}\n\n\
+                     Commands:\n\
+                     /notion push [page]  Sync local tasks → Notion\n\
+                     /notion pull         Sync Notion → local tasks\n\
+                     /notion status       Show connection status\n\
+                     /notion reset        Clear configuration"
+                );
+
+                let chat = self.active_chat_messages();
+                chat.push(SidebarMessage {
+                    role: MessageRole::System,
+                    content,
+                });
+            }
+            other => {
+                // Treat as "/notion push <other>" shorthand
+                self.notion_push(Some(other));
+            }
+        }
+    }
+
+    fn notion_push(&mut self, page_selector: Option<&str>) {
+        let config = icebox_runtime::IceboxConfig::load();
+        let config_api_key = config
+            .notion
+            .as_ref()
+            .and_then(|n| n.api_key.as_deref())
+            .map(String::from);
+
+        // Check API key availability
+        let has_env_key = std::env::var("NOTION_API_KEY")
+            .map(|k| !k.is_empty())
+            .unwrap_or(false);
+        if !has_env_key && config_api_key.is_none() {
+            let chat = self.active_chat_messages();
+            chat.push(SidebarMessage {
+                role: MessageRole::System,
+                content: "NOTION_API_KEY is not set.\n\
+                          Create one at https://www.notion.so/my-integrations\n\
+                          Type /notion for setup instructions."
+                    .into(),
+            });
+            return;
+        }
+
+        // If we have a database_id and no page selector, sync directly
+        if page_selector.is_none()
+            && let Some(ref notion) = config.notion
+            && let Some(ref db_id) = notion.database_id
+        {
+            let db_id = db_id.clone();
+            let tasks = self.store.list().unwrap_or_default();
+            self.set_status("Syncing to Notion...", false);
+            self.notion_busy = Some("Syncing to Notion".to_string());
+
+            let (tx, rx) = std::sync::mpsc::channel();
+            self.notify_rx = Some(rx);
+
+            std::thread::spawn(move || {
+                let client =
+                    match icebox_tools::notion::NotionClient::from_env(config_api_key.as_deref()) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            let _ = tx.send(format!("Notion connection failed: {e}"));
+                            return;
+                        }
+                    };
+                match client.sync_tasks(&db_id, &tasks) {
+                    Ok(result) => {
+                        let _ = tx.send(result.to_string());
+                    }
+                    Err(e) => {
+                        let _ = tx.send(format!("Notion sync failed: {e}"));
+                    }
+                }
+            });
+            return;
+        }
+
+        // No database configured or page selector provided → search/setup
+        match page_selector {
+            Some(selector) => {
+                // Check if it's a number (referencing cached search results)
+                if let Ok(idx) = selector.parse::<usize>() {
+                    let cache_len = self.notion_pages_cache.len();
+                    if idx == 0 || idx > cache_len {
+                        let chat = self.active_chat_messages();
+                        chat.push(SidebarMessage {
+                            role: MessageRole::System,
+                            content: format!("Invalid number. Choose from 1 to {cache_len}.",),
+                        });
+                        return;
+                    }
+                    let page = self.notion_pages_cache.get(idx - 1).cloned();
+                    if let Some(page) = page {
+                        self.notion_setup_and_sync(page, config_api_key);
+                    }
+                    return;
+                }
+
+                // Search by name
+                self.set_status("Searching Notion pages...", false);
+                self.notion_busy = Some("Searching Notion pages".to_string());
+                let query = selector.to_string();
+                let tasks = self.store.list().unwrap_or_default();
+
+                let (tx, rx) = std::sync::mpsc::channel();
+                self.notify_rx = Some(rx);
+
+                std::thread::spawn(move || {
+                    let client = match icebox_tools::notion::NotionClient::from_env(
+                        config_api_key.as_deref(),
+                    ) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            let _ = tx.send(format!("Notion connection failed: {e}"));
+                            return;
+                        }
+                    };
+
+                    // Search for pages
+                    let pages = match client.search_pages(&query) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            let _ = tx.send(format!("Notion search failed: {e}"));
+                            return;
+                        }
+                    };
+
+                    if pages.is_empty() {
+                        let _ = tx.send(format!(
+                            "No Notion pages matching '{query}'.\n\
+                             \n\
+                             Make sure the integration is invited to the page:\n\
+                             1. Open the Notion page you want to connect\n\
+                             2. Click '...' in the top-right corner\n\
+                             3. Go to 'Connections' and add your integration\n\
+                             4. Run /notion push <page-name> again"
+                        ));
+                        return;
+                    }
+
+                    // If exactly one match, use it directly
+                    if pages.len() == 1 {
+                        let page = &pages[0];
+                        let _ = tx.send(format!(
+                            "Creating database under Notion page '{}'...",
+                            page.title
+                        ));
+                        match client.create_database(&page.id) {
+                            Ok(db_id) => {
+                                if let Err(e) =
+                                    icebox_runtime::IceboxConfig::save_notion(&db_id, &page.id)
+                                {
+                                    let _ = tx.send(format!("Failed to save config: {e}"));
+                                    return;
+                                }
+                                match client.sync_tasks(&db_id, &tasks) {
+                                    Ok(result) => {
+                                        let _ = tx.send(result.to_string());
+                                    }
+                                    Err(e) => {
+                                        let _ = tx.send(format!("Notion sync failed: {e}"));
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                let _ = tx.send(format!("Notion DB creation failed: {e}"));
+                            }
+                        }
+                        return;
+                    }
+
+                    // Multiple matches → show list
+                    let mut msg = String::from("Multiple pages matched:\n");
+                    for (i, page) in pages.iter().enumerate() {
+                        msg.push_str(&format!("  {}. {}\n", i + 1, page.title));
+                    }
+                    msg.push_str("\nSelect with /notion push <number>");
+                    // Send page list as JSON for caching
+                    let _ = tx.send(format!(
+                        "__PAGES__:{}",
+                        serde_json::to_string(
+                            &pages.iter().map(|p| (&p.id, &p.title)).collect::<Vec<_>>()
+                        )
+                        .unwrap_or_default()
+                    ));
+                    let _ = tx.send(msg);
+                });
+            }
+            None => {
+                // No config, no selector → search all and show list
+                self.set_status("Searching Notion pages...", false);
+                self.notion_busy = Some("Searching Notion pages".to_string());
+
+                let (tx, rx) = std::sync::mpsc::channel();
+                self.notify_rx = Some(rx);
+
+                std::thread::spawn(move || {
+                    let client = match icebox_tools::notion::NotionClient::from_env(
+                        config_api_key.as_deref(),
+                    ) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            let _ = tx.send(format!("Notion connection failed: {e}"));
+                            return;
+                        }
+                    };
+
+                    let pages = match client.search_pages("") {
+                        Ok(p) => p,
+                        Err(e) => {
+                            let _ = tx.send(format!("Notion search failed: {e}"));
+                            return;
+                        }
+                    };
+
+                    if pages.is_empty() {
+                        let _ = tx.send(
+                            "No Notion pages accessible.\n\
+                             Make sure the integration is invited to at least one page."
+                                .to_string(),
+                        );
+                        return;
+                    }
+
+                    let mut msg = String::from("Notion pages:\n");
+                    for (i, page) in pages.iter().enumerate() {
+                        msg.push_str(&format!("  {}. {}\n", i + 1, page.title));
+                    }
+                    msg.push_str("\nSelect a target page with /notion push <number>");
+                    let _ = tx.send(format!(
+                        "__PAGES__:{}",
+                        serde_json::to_string(
+                            &pages.iter().map(|p| (&p.id, &p.title)).collect::<Vec<_>>()
+                        )
+                        .unwrap_or_default()
+                    ));
+                    let _ = tx.send(msg);
+                });
+            }
+        }
+    }
+
+    fn notion_pull(&mut self) {
+        let config = icebox_runtime::IceboxConfig::load();
+        let config_api_key = config
+            .notion
+            .as_ref()
+            .and_then(|n| n.api_key.as_deref())
+            .map(String::from);
+
+        let db_id = match config
+            .notion
+            .as_ref()
+            .and_then(|n| n.database_id.as_deref())
+        {
+            Some(id) => id.to_owned(),
+            None => {
+                let chat = self.active_chat_messages();
+                chat.push(SidebarMessage {
+                    role: MessageRole::System,
+                    content: "No database configured.\n\
+                              Run /notion push <page-name> first."
+                        .into(),
+                });
+                return;
+            }
+        };
+
+        let local_tasks = self.store.list().unwrap_or_default();
+        let workspace = self.workspace_path.clone();
+        self.set_status("Pulling from Notion...", false);
+        self.notion_busy = Some("Pulling from Notion".to_string());
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.notify_rx = Some(rx);
+
+        std::thread::spawn(move || {
+            let client =
+                match icebox_tools::notion::NotionClient::from_env(config_api_key.as_deref()) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        let _ = tx.send(format!("Notion connection failed: {e}"));
+                        return;
+                    }
+                };
+
+            let remote_tasks = match client.pull_tasks(&db_id) {
+                Ok(t) => t,
+                Err(e) => {
+                    let _ = tx.send(format!("Notion pull failed: {e}"));
+                    return;
+                }
+            };
+
+            let store = match icebox_task::store::TaskStore::open(&workspace) {
+                Ok(s) => s,
+                Err(e) => {
+                    let _ = tx.send(format!("Failed to open task store: {e}"));
+                    return;
+                }
+            };
+
+            let local_map: std::collections::HashMap<String, icebox_task::model::Task> =
+                local_tasks.into_iter().map(|t| (t.id.clone(), t)).collect();
+
+            let mut created = 0;
+            let mut updated = 0;
+            let mut unchanged = 0;
+            let mut errors: Vec<String> = Vec::new();
+            let mut remote_ids = std::collections::HashSet::new();
+
+            for (mut remote, last_edited) in remote_tasks {
+                remote_ids.insert(remote.id.clone());
+                if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&last_edited) {
+                    remote.updated_at = dt.with_timezone(&chrono::Utc);
+                }
+                match local_map.get(&remote.id) {
+                    None => match store.save(&remote) {
+                        Ok(()) => created += 1,
+                        Err(e) => errors.push(format!("{}: {e}", remote.id)),
+                    },
+                    Some(local) => {
+                        if remote.updated_at > local.updated_at {
+                            match store.save(&remote) {
+                                Ok(()) => updated += 1,
+                                Err(e) => errors.push(format!("{}: {e}", remote.id)),
+                            }
+                        } else {
+                            unchanged += 1;
+                        }
+                    }
+                }
+            }
+
+            // Delete local tasks missing from Notion (Notion is source of truth)
+            let mut deleted = 0;
+            let mut deleted_titles: Vec<String> = Vec::new();
+            for (id, local) in &local_map {
+                if !remote_ids.contains(id) {
+                    match store.delete(id) {
+                        Ok(()) => {
+                            deleted += 1;
+                            deleted_titles.push(local.title.clone());
+                        }
+                        Err(e) => errors.push(format!("delete {id}: {e}")),
+                    }
+                }
+            }
+
+            let mut msg = format!(
+                "Pull complete: {created} created, {updated} updated, {unchanged} unchanged, {deleted} deleted"
+            );
+            if !deleted_titles.is_empty() {
+                msg.push_str("\n\nDeleted locally (removed from Notion):");
+                for title in &deleted_titles {
+                    msg.push_str(&format!("\n  - {title}"));
+                }
+            }
+            if !errors.is_empty() {
+                msg.push_str("\n\nErrors:");
+                for e in &errors {
+                    msg.push_str(&format!("\n  {e}"));
+                }
+            }
+
+            // Signal reload-needed so TUI picks up new tasks
+            let _ = tx.send("__RELOAD__".to_string());
+            let _ = tx.send(msg);
+        });
+    }
+
+    fn notion_setup_and_sync(&mut self, page: NotionPage, config_api_key: Option<String>) {
+        let tasks = self.store.list().unwrap_or_default();
+        self.set_status("Creating Notion DB and syncing...", false);
+        self.notion_busy = Some("Creating Notion DB and syncing".to_string());
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.notify_rx = Some(rx);
+
+        std::thread::spawn(move || {
+            let client =
+                match icebox_tools::notion::NotionClient::from_env(config_api_key.as_deref()) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        let _ = tx.send(format!("Notion connection failed: {e}"));
+                        return;
+                    }
+                };
+
+            let _ = tx.send(format!(
+                "Creating Icebox Kanban database under '{}'...",
+                page.title
+            ));
+
+            match client.create_database(&page.id) {
+                Ok(db_id) => {
+                    if let Err(e) = icebox_runtime::IceboxConfig::save_notion(&db_id, &page.id) {
+                        let _ = tx.send(format!("Failed to save config: {e}"));
+                        return;
+                    }
+                    match client.sync_tasks(&db_id, &tasks) {
+                        Ok(result) => {
+                            let _ = tx.send(result.to_string());
+                        }
+                        Err(e) => {
+                            let _ = tx.send(format!("Notion sync failed: {e}"));
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(format!("Notion DB creation failed: {e}"));
+                }
+            }
+        });
+    }
+
+    fn notion_status(&mut self) {
+        let config = icebox_runtime::IceboxConfig::load();
+        let config_api_key = config
+            .notion
+            .as_ref()
+            .and_then(|n| n.api_key.as_deref())
+            .map(String::from);
+
+        let has_env_key = std::env::var("NOTION_API_KEY")
+            .map(|k| !k.is_empty())
+            .unwrap_or(false);
+        let has_config_key = config_api_key.is_some();
+
+        let key_source = if has_env_key {
+            Some("env (NOTION_API_KEY)")
+        } else if has_config_key {
+            Some("config.json")
+        } else {
+            None
+        };
+
+        let key_line = match key_source {
+            Some(source) => {
+                match icebox_tools::notion::NotionClient::from_env(config_api_key.as_deref()) {
+                    Ok(client) => match client.verify_key() {
+                        Ok(name) => format!("  API Key: {source} — valid (bot: {name})"),
+                        Err(e) => format!("  API Key: {source} — invalid ({e})"),
+                    },
+                    Err(e) => format!("  API Key: {source} — error ({e})"),
+                }
+            }
+            None => "  API Key: not configured".to_string(),
+        };
+
+        let db_line = match config.notion {
+            Some(ref n) if n.database_id.is_some() => {
+                format!(
+                    "  Database: {}\n  Parent Page: {}",
+                    n.database_id.as_deref().unwrap_or("-"),
+                    n.parent_page_id.as_deref().unwrap_or("-"),
+                )
+            }
+            _ => "  Database: not configured".to_string(),
+        };
+
+        let content = format!("Notion status:\n{key_line}\n{db_line}");
+        let chat = self.active_chat_messages();
+        chat.push(SidebarMessage {
+            role: MessageRole::System,
+            content,
+        });
+    }
+
+    fn notion_reset(&mut self) {
+        let mut config = icebox_runtime::IceboxConfig::load();
+        config.notion = None;
+        if let Err(e) = config.save() {
+            self.set_status(format!("Failed to reset config: {e}"), true);
+            return;
+        }
+        self.notion_pages_cache.clear();
+        let chat = self.active_chat_messages();
+        chat.push(SidebarMessage {
+            role: MessageRole::System,
+            content: "Notion configuration cleared.".into(),
+        });
+    }
+
+    fn active_chat_messages(&mut self) -> &mut Vec<SidebarMessage> {
+        if self.bottom_chat_focused {
+            &mut self.bottom_chat.messages
+        } else {
+            &mut self.sidebar.messages
+        }
+    }
+
+    fn drain_notify_events(&mut self) {
+        let rx = match &self.notify_rx {
+            Some(rx) => rx,
+            None => return,
+        };
+        let mut messages = Vec::new();
+        let mut disconnected = false;
+        loop {
+            match rx.try_recv() {
+                Ok(msg) => messages.push(msg),
+                Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    disconnected = true;
+                    break;
+                }
+            }
+        }
+        if disconnected {
+            // Worker thread finished — clear busy state
+            self.notion_busy = None;
+            self.notify_rx = None;
+            if self.status_message.as_ref().is_some_and(|s| !s.is_error) {
+                self.status_message = None;
+            }
+        }
+        for msg in messages {
+            // Handle page cache updates from notion search
+            if let Some(json_str) = msg.strip_prefix("__PAGES__:") {
+                if let Ok(pairs) = serde_json::from_str::<Vec<(String, String)>>(json_str) {
+                    self.notion_pages_cache = pairs
+                        .into_iter()
+                        .map(|(id, title)| NotionPage { id, title })
+                        .collect();
+                }
+                continue;
+            }
+
+            // Handle reload signal (e.g. after /notion pull)
+            if msg == "__RELOAD__" {
+                self.reload_tasks();
+                continue;
+            }
+
+            let chat = if self.bottom_chat_focused {
+                &mut self.bottom_chat.messages
+            } else {
+                &mut self.sidebar.messages
+            };
+            chat.push(SidebarMessage {
+                role: MessageRole::System,
+                content: msg,
+            });
+        }
+    }
+
     fn handle_slash_command(&mut self, cmd: icebox_commands::SlashCommand) {
         match cmd {
             icebox_commands::SlashCommand::Help => {
@@ -1910,7 +2583,8 @@ impl App {
                     None => {
                         self.active_chat().push(SidebarMessage {
                             role: MessageRole::System,
-                            content: "Usage: /move <icebox|emergency|inprogress|testing|complete>".into(),
+                            content: "Usage: /move <icebox|emergency|inprogress|testing|complete>"
+                                .into(),
                         });
                     }
                     Some(col) => {
@@ -1950,12 +2624,14 @@ impl App {
                     } else {
                         self.active_chat().push(SidebarMessage {
                             role: MessageRole::System,
-                            content: "Usage: /delete <task-id-prefix> or select a task first".into(),
+                            content: "Usage: /delete <task-id-prefix> or select a task first"
+                                .into(),
                         });
                     }
                 } else {
                     let tasks = self.store.list().unwrap_or_default();
-                    let matching: Vec<&Task> = tasks.iter().filter(|t| t.id.starts_with(&prefix)).collect();
+                    let matching: Vec<&Task> =
+                        tasks.iter().filter(|t| t.id.starts_with(&prefix)).collect();
                     match matching.len() {
                         0 => self.set_status(format!("No task matching '{prefix}'"), true),
                         1 => {
@@ -1969,7 +2645,9 @@ impl App {
                                 Err(e) => self.set_status(format!("Delete failed: {e}"), true),
                             }
                         }
-                        n => self.set_status(format!("Ambiguous: {n} tasks match '{prefix}'"), true),
+                        n => {
+                            self.set_status(format!("Ambiguous: {n} tasks match '{prefix}'"), true)
+                        }
                     }
                 }
             }
@@ -1984,7 +2662,10 @@ impl App {
                     let tasks = self.store.list().unwrap_or_default();
                     let results: Vec<&Task> = tasks
                         .iter()
-                        .filter(|t| t.title.to_lowercase().contains(&q) || t.tags.iter().any(|tag| tag.to_lowercase().contains(&q)))
+                        .filter(|t| {
+                            t.title.to_lowercase().contains(&q)
+                                || t.tags.iter().any(|tag| tag.to_lowercase().contains(&q))
+                        })
                         .collect();
                     if results.is_empty() {
                         self.active_chat().push(SidebarMessage {
@@ -2018,8 +2699,10 @@ impl App {
                         output.push_str("_(empty)_\n");
                     } else {
                         for t in &col_tasks {
-                            output.push_str(&format!("- [{}] {} ({})\n",
-                                t.priority.label(), t.title,
+                            output.push_str(&format!(
+                                "- [{}] {} ({})\n",
+                                t.priority.label(),
+                                t.title,
                                 t.tags.join(", ")
                             ));
                         }
@@ -2099,6 +2782,9 @@ impl App {
                         }
                     }
                 }
+            }
+            icebox_commands::SlashCommand::Notion { action } => {
+                self.handle_notion_command(action);
             }
             icebox_commands::SlashCommand::Resume { .. } => {
                 self.active_chat().push(SidebarMessage {

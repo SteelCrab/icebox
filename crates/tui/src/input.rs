@@ -453,7 +453,7 @@ fn handle_create_key(app: &mut App, key: KeyEvent) {
                     app.mode = AppMode::Board;
                 }
             }
-        }
+        },
         KeyCode::Char(c) => match app.create_field {
             CreateField::Title => app.create_input.push(c),
             CreateField::Tags => app.create_tags.push(c),
@@ -474,7 +474,10 @@ fn handle_create_key(app: &mut App, key: KeyEvent) {
         }
         // Up/Down: switch field
         KeyCode::Up | KeyCode::Down => {
-            let cur_idx = FIELD_ORDER.iter().position(|f| *f == app.create_field).unwrap_or(0);
+            let cur_idx = FIELD_ORDER
+                .iter()
+                .position(|f| *f == app.create_field)
+                .unwrap_or(0);
             let next = if key.code == KeyCode::Down {
                 (cur_idx + 1) % FIELD_ORDER.len()
             } else {
@@ -634,9 +637,9 @@ fn handle_mouse(app: &mut App, mouse: MouseEvent) {
                 }
                 DragTarget::None => {
                     let now = std::time::Instant::now();
-                    let should_scroll = app.last_board_scroll.is_none_or(|last| {
-                        now.duration_since(last).as_millis() > 80
-                    });
+                    let should_scroll = app
+                        .last_board_scroll
+                        .is_none_or(|last| now.duration_since(last).as_millis() > 80);
                     if should_scroll {
                         app.board.move_selection_up();
                         app.last_board_scroll = Some(now);
@@ -659,9 +662,9 @@ fn handle_mouse(app: &mut App, mouse: MouseEvent) {
                 }
                 DragTarget::None => {
                     let now = std::time::Instant::now();
-                    let should_scroll = app.last_board_scroll.is_none_or(|last| {
-                        now.duration_since(last).as_millis() > 80
-                    });
+                    let should_scroll = app
+                        .last_board_scroll
+                        .is_none_or(|last| now.duration_since(last).as_millis() > 80);
                     if should_scroll {
                         app.board.move_selection_down();
                         app.last_board_scroll = Some(now);
@@ -844,8 +847,7 @@ fn handle_memory_key(app: &mut App, key: KeyEvent) {
                             if app.memory_selected > 0
                                 && app.memory_selected >= app.memory_entries.len()
                             {
-                                app.memory_selected =
-                                    app.memory_entries.len().saturating_sub(1);
+                                app.memory_selected = app.memory_entries.len().saturating_sub(1);
                             }
                             app.set_status("Memory deleted", false);
                         }
@@ -879,20 +881,31 @@ fn extract_selected_text(app: &App, sel: &TextSelection) -> String {
     let (start, _end) = normalize_selection(sel);
 
     // Determine which area the selection started in
-    let (area_rect, lines, scroll) =
-        if let Some(chat_rect) = app.sidebar.chat_rect
-            && in_rect(start.0, start.1, chat_rect)
-        {
-            (chat_rect, &app.sidebar.rendered_chat_lines, app.sidebar.chat_scroll)
-        } else if let Some(chat_rect) = app.bottom_chat_rect
-            && in_rect(start.0, start.1, chat_rect)
-        {
-            (chat_rect, &app.bottom_chat.rendered_chat_lines, app.bottom_chat.chat_scroll)
-        } else if let Some(detail_rect) = app.sidebar.detail_rect {
-            (detail_rect, &app.sidebar.rendered_text_lines, app.sidebar.detail_scroll)
-        } else {
-            return String::new();
-        };
+    let (area_rect, lines, scroll) = if let Some(chat_rect) = app.sidebar.chat_rect
+        && in_rect(start.0, start.1, chat_rect)
+    {
+        (
+            chat_rect,
+            &app.sidebar.rendered_chat_lines,
+            app.sidebar.chat_scroll,
+        )
+    } else if let Some(chat_rect) = app.bottom_chat_rect
+        && in_rect(start.0, start.1, chat_rect)
+    {
+        (
+            chat_rect,
+            &app.bottom_chat.rendered_chat_lines,
+            app.bottom_chat.chat_scroll,
+        )
+    } else if let Some(detail_rect) = app.sidebar.detail_rect {
+        (
+            detail_rect,
+            &app.sidebar.rendered_text_lines,
+            app.sidebar.detail_scroll,
+        )
+    } else {
+        return String::new();
+    };
 
     let (start, end) = normalize_selection(sel);
     let mut result = String::new();
@@ -902,10 +915,7 @@ fn extract_selected_text(app: &App, sel: &TextSelection) -> String {
             continue;
         }
         let line_idx = usize::from(y.saturating_sub(area_rect.y).saturating_add(scroll));
-        let line = lines
-            .get(line_idx)
-            .map(String::as_str)
-            .unwrap_or("");
+        let line = lines.get(line_idx).map(String::as_str).unwrap_or("");
 
         let x_start = if y == start.1 {
             usize::from(start.0.saturating_sub(area_rect.x))

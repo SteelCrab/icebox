@@ -5,7 +5,7 @@
 use anyhow::{Context, Result};
 use icebox_task::model::{Column, Priority, Task};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const NOTION_API_BASE: &str = "https://api.notion.com/v1";
 const NOTION_VERSION: &str = "2022-06-28";
@@ -117,9 +117,7 @@ impl NotionClient {
                 .and_then(Value::as_str)
                 .unwrap_or("unknown error");
             if status.as_u16() == 401 {
-                anyhow::bail!(
-                    "Notion 인증 실패 (401): NOTION_API_KEY를 확인해주세요\n{message}"
-                );
+                anyhow::bail!("Notion 인증 실패 (401): NOTION_API_KEY를 확인해주세요\n{message}");
             }
             anyhow::bail!("Notion API 에러 ({status}): {message}");
         }
@@ -200,9 +198,15 @@ impl NotionClient {
     /// # Errors
     /// Returns an error if the API call fails or the response is missing a database ID.
     pub fn create_database(&self, parent_page_id: &str) -> Result<String> {
+        let db_name = std::env::current_dir()
+            .ok()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| "Icebox Kanban".to_string());
+
         let body = json!({
-            "parent": { "type": "page_id", "page_id": parent_page_id },
-            "title": [{ "type": "text", "text": { "content": "Icebox Kanban" } }],
+          "parent": { "type": "page_id", "page_id": parent_page_id },
+          "title": [{ "type": "text", "text": { "content": db_name } }],
+
             "properties": {
                 "Name": { "title": {} },
                 "Task ID": { "rich_text": {} },
@@ -620,7 +624,11 @@ fn block_to_markdown(block: &Value) -> Option<String> {
 
 /// Extract a plain-text rich_text property from a page.
 fn extract_rich_text_property(page: &Value, prop: &str) -> Option<String> {
-    let arr = page.get("properties")?.get(prop)?.get("rich_text")?.as_array()?;
+    let arr = page
+        .get("properties")?
+        .get(prop)?
+        .get("rich_text")?
+        .as_array()?;
     let s: String = arr
         .iter()
         .filter_map(|t| t.get("plain_text").and_then(Value::as_str))

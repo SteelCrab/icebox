@@ -39,10 +39,11 @@ Rustで構築されたターミナルベースのカンバンボードで、Anth
 - **AI サイドバー** — タスクごとのAI会話 + ストリーミング応答
 - **タスクごとのセッション** — 各タスクが独立したAI会話履歴を維持、ディスクに自動保存
 - **ビルトインツール** — AIがシェル実行、ファイル読み書き、コード検索、タスク作成/更新
-- **スラッシュコマンド** — ボード管理、AI制御、認証のための17コマンド
+- **スラッシュコマンド** — ボード管理、AI制御、認証のための18コマンド
 - **OAuth PKCE** — claude.aiを通じたブラウザログイン
 - **マウス対応** — クリック選択、ドラッグスクロール、入力フォーカスクリック
 - **テキスト選択** — ドラッグでAI応答を選択してコピー
+- **スイムレーン** — タブベースのスイムレーンフィルタリング、`[`/`]`キーで切替
 - **Notionスタイルリンク** — commit, PR, issue, branchの参照を自動パース
 - **タスク日付** — タスクごとの開始日/期限管理
 - **AIメモリ** — セッション間で維持される永続コンテキストメモリ
@@ -50,26 +51,70 @@ Rustで構築されたターミナルベースのカンバンボードで、Anth
 
 ## インストール
 
-### クイックインストール
+### macOS
+
+#### クイックインストール
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SteelCrab/icebox/main/install.sh | bash
 ```
 
-### Homebrew
+#### Homebrew
 
 ```bash
 brew tap SteelCrab/tap
 brew install icebox
 ```
 
-### ソースからインストール (cargo install)
+#### ビルド済みバイナリ (手動)
+
+[最新リリース](https://github.com/SteelCrab/icebox/releases/latest) からダウンロード:
+
+| アーキテクチャ | アセット |
+|---|---|
+| Apple Silicon (arm64) | `icebox-aarch64-apple-darwin.tar.gz` |
+
+```bash
+tar -xzf icebox-aarch64-apple-darwin.tar.gz
+chmod +x icebox
+mv icebox ~/.local/bin/    # または $PATH 内の任意のディレクトリ
+```
+
+### Linux
+
+#### クイックインストール
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SteelCrab/icebox/main/install.sh | bash
+```
+
+#### ビルド済みバイナリ (手動)
+
+[最新リリース](https://github.com/SteelCrab/icebox/releases/latest) からダウンロード:
+
+| アーキテクチャ | libc | アセット |
+|---|---|---|
+| x86_64 | glibc | `icebox-x86_64-unknown-linux-gnu.tar.gz` |
+| x86_64 | musl (Alpine) | `icebox-x86_64-unknown-linux-musl.tar.gz` |
+| aarch64 | glibc | `icebox-aarch64-unknown-linux-gnu.tar.gz` |
+| aarch64 | musl (Alpine) | `icebox-aarch64-unknown-linux-musl.tar.gz` |
+| armv7 (Raspberry Pi 2/3) | gnueabihf | `icebox-armv7-unknown-linux-gnueabihf.tar.gz` |
+
+```bash
+tar -xzf icebox-<target>.tar.gz
+chmod +x icebox
+mv icebox ~/.local/bin/    # または $PATH 内の任意のディレクトリ
+```
+
+### ソースからビルド (全OS)
+
+#### Cargoでインストール
 
 ```bash
 cargo install --git https://github.com/SteelCrab/icebox.git
 ```
 
-### ソースビルド
+#### ソースからビルド
 
 ```bash
 git clone https://github.com/SteelCrab/icebox.git
@@ -128,11 +173,13 @@ icebox whoami          # 認証状態を確認
 | `n` | 新規タスク作成 |
 | `d` | タスク削除 (y/Enterで確認) |
 | `>/<` | タスクを次/前のカラムへ移動 |
+| `[/]` | スイムレーンタブ切替 |
 | `/` | 下部AIチャットパネル切替 |
 | `1/2` | タブ切替 (Board / Memory) |
 | `r` | リフレッシュ |
 | `q`, `Ctrl+C` | 終了 |
 | マウスクリック | タスク選択 + 詳細を開く |
+| マウスクリック (スイムレーンバー) | スイムレーン切替 |
 | マウススクロール | ナビゲーション |
 
 ### Detailモード（サイドバー）
@@ -175,6 +222,7 @@ icebox whoami          # 認証状態を確認
 | | `/search <query>` | タスク検索 |
 | | `/export` | ボードをマークダウンでエクスポート |
 | | `/diff` | Git diff |
+| | `/swimlane [name \| clear]` | スイムレーン設定/一覧 |
 | **AI** | `/help` | コマンド一覧 |
 | | `/status` | セッション状態 |
 | | `/cost` | トークン使用量 |
@@ -198,6 +246,7 @@ title: "タスクタイトル"
 column: inprogress    # icebox | emergency | inprogress | testing | complete
 priority: high        # low | medium | high | critical
 tags: ["backend", "auth"]
+swimlane: "backend"
 start_date: "2026-04-01T00:00:00Z"
 due_date: "2026-04-10T00:00:00Z"
 created_at: "ISO8601"
@@ -237,7 +286,7 @@ crates/
   api/          # API — AnthropicClient, SSEストリーミング, AuthMethod, リトライ
   runtime/      # ランタイム — ConversationRuntime, Session, OAuth PKCE, UsageTracker
   tools/        # ツール12個 — bash, read/write_file, glob/grep_search, カンバン (list/create/update/move), メモリ
-  commands/     # スラッシュコマンド17個 (Board, AI, Auth, Session)
+  commands/     # スラッシュコマンド18個 (Board, AI, Auth, Session)
 ```
 
 ## ビルトインAIツール
@@ -251,7 +300,7 @@ crates/
 | `grep_search` | 正規表現でファイル内容検索 |
 | `list_tasks` | カンバンタスク一覧 |
 | `create_task` | 新規タスク作成 |
-| `update_task` | 既存タスク更新（タイトル、優先度、タグ、日付、本文） |
+| `update_task` | 既存タスク更新（タイトル、優先度、タグ、スイムレーン、日付、本文） |
 | `move_task` | タスクカラム移動 |
 | `save_memory` | AIコンテキストメモリ保存 |
 | `list_memories` | 保存メモリ一覧 |

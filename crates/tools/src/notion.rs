@@ -232,6 +232,7 @@ impl NotionClient {
                     }
                 },
                 "Tags": { "multi_select": { "options": [] } },
+                "Swimlane": { "rich_text": {} },
                 "Start Date": { "date": {} },
                 "Due Date": { "date": {} },
                 "Progress": { "rich_text": {} },
@@ -468,6 +469,14 @@ fn build_properties(task: &Task) -> Result<Value> {
         obj.insert(
             "Due Date".into(),
             json!({ "date": { "start": dt.to_rfc3339() } }),
+        );
+    }
+
+    // Swimlane
+    if let Some(ref lane) = task.swimlane {
+        obj.insert(
+            "Swimlane".into(),
+            json!({ "rich_text": [{ "text": { "content": lane } }] }),
         );
     }
 
@@ -734,6 +743,8 @@ fn page_to_task(page: &Value) -> Option<Task> {
         })
     });
 
+    let swimlane = extract_rich_text_property(page, "Swimlane").filter(|s| !s.is_empty());
+
     let created_at = extract_date_property(page, "Created At")
         .or_else(|| {
             page.get("created_time")
@@ -767,6 +778,7 @@ fn page_to_task(page: &Value) -> Option<Task> {
         start_date,
         due_date,
         progress,
+        swimlane,
         created_at,
         updated_at,
         body: String::new(),

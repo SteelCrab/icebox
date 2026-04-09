@@ -134,6 +134,8 @@ pub struct Task {
     pub due_date: Option<DateTime<Utc>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub progress: Option<Progress>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub swimlane: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     #[serde(skip)]
@@ -177,6 +179,7 @@ impl Task {
             start_date: None,
             due_date: None,
             progress: None,
+            swimlane: None,
             created_at: now,
             updated_at: now,
             body: String::new(),

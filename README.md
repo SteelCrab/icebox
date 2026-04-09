@@ -39,37 +39,82 @@ A terminal-based kanban board built with Rust, featuring an integrated AI assist
 - **AI Sidebar** — Per-task AI conversations with streaming responses
 - **Per-Task Sessions** — Each task maintains its own AI chat history, persisted to disk
 - **Built-in Tools** — AI can run shell commands, read/write files, search code, create/update tasks
-- **Slash Commands** — 17 commands for board management, AI control, and authentication
+- **Slash Commands** — 18 commands for board management, AI control, and authentication
 - **OAuth PKCE** — Login via claude.ai with automatic browser flow
 - **Mouse Support** — Click to select tasks, drag to scroll, click to focus input
 - **Text Selection** — Drag to select and copy AI responses
 - **Notion-style Links** — Auto-parsed commit, PR, issue, and branch references
 - **Task Dates** — Start date and due date tracking per task
+- **Swimlanes** — Tab-based swimlane filtering with `[`/`]` navigation
 - **AI Memory** — Persistent memory across sessions for AI context
 - **Task Storage** — Markdown files with YAML frontmatter (`.icebox/tasks/`)
 
 ## Installation
 
-### Quick Install
+### macOS
+
+#### Quick Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SteelCrab/icebox/main/install.sh | bash
 ```
 
-### Homebrew
+#### Homebrew
 
 ```bash
 brew tap SteelCrab/tap
 brew install icebox
 ```
 
-### From Source (cargo install)
+#### Pre-built Binary (manual)
+
+Download from the [latest release](https://github.com/SteelCrab/icebox/releases/latest):
+
+| Architecture | Asset |
+|---|---|
+| Apple Silicon (arm64) | `icebox-aarch64-apple-darwin.tar.gz` |
+
+```bash
+tar -xzf icebox-aarch64-apple-darwin.tar.gz
+chmod +x icebox
+mv icebox ~/.local/bin/    # or any directory in $PATH
+```
+
+### Linux
+
+#### Quick Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SteelCrab/icebox/main/install.sh | bash
+```
+
+#### Pre-built Binaries (manual)
+
+Download from the [latest release](https://github.com/SteelCrab/icebox/releases/latest):
+
+| Architecture | libc | Asset |
+|---|---|---|
+| x86_64 | glibc | `icebox-x86_64-unknown-linux-gnu.tar.gz` |
+| x86_64 | musl (Alpine) | `icebox-x86_64-unknown-linux-musl.tar.gz` |
+| aarch64 | glibc | `icebox-aarch64-unknown-linux-gnu.tar.gz` |
+| aarch64 | musl (Alpine) | `icebox-aarch64-unknown-linux-musl.tar.gz` |
+| armv7 (Raspberry Pi 2/3) | gnueabihf | `icebox-armv7-unknown-linux-gnueabihf.tar.gz` |
+
+```bash
+tar -xzf icebox-<target>.tar.gz
+chmod +x icebox
+mv icebox ~/.local/bin/    # or any directory in $PATH
+```
+
+### From Source (any OS)
+
+#### Cargo Install
 
 ```bash
 cargo install --git https://github.com/SteelCrab/icebox.git
 ```
 
-### Build from Source
+#### Build from Source
 
 ```bash
 git clone https://github.com/SteelCrab/icebox.git
@@ -128,11 +173,13 @@ icebox whoami          # Check auth status
 | `n` | Create new task |
 | `d` | Delete task (confirm with y/Enter) |
 | `>/<` | Move task to next/previous column |
+| `[/]` | Switch swimlane tab |
 | `/` | Toggle bottom AI chat panel |
 | `1/2` | Switch tab (Board / Memory) |
 | `r` | Refresh board |
 | `q`, `Ctrl+C` | Quit |
 | Mouse click | Select task + open detail |
+| Mouse click (swimlane bar) | Switch swimlane |
 | Mouse scroll | Navigate |
 
 ### Detail Mode (Sidebar)
@@ -175,6 +222,7 @@ icebox whoami          # Check auth status
 | | `/search <query>` | Search tasks |
 | | `/export` | Export board as markdown |
 | | `/diff` | Show git diff |
+| | `/swimlane [name \| clear]` | Set swimlane on task or list swimlanes |
 | **AI** | `/help` | Command list |
 | | `/status` | Session status |
 | | `/cost` | Token usage |
@@ -198,6 +246,7 @@ title: "Task title"
 column: inprogress    # icebox | emergency | inprogress | testing | complete
 priority: high        # low | medium | high | critical
 tags: ["backend", "auth"]
+swimlane: "backend"
 start_date: "2026-04-01T00:00:00Z"
 due_date: "2026-04-10T00:00:00Z"
 created_at: "ISO8601"
@@ -237,7 +286,7 @@ crates/
   api/          # API — AnthropicClient, SSE streaming, AuthMethod, retry
   runtime/      # Runtime — ConversationRuntime, Session, OAuth PKCE, UsageTracker
   tools/        # 12 tools — bash, read/write_file, glob/grep_search, kanban (list/create/update/move), memory
-  commands/     # 17 slash commands (Board, AI, Auth, Session)
+  commands/     # 18 slash commands (Board, AI, Auth, Session)
 ```
 
 ## Built-in AI Tools
@@ -251,7 +300,7 @@ crates/
 | `grep_search` | Search file contents with regex |
 | `list_tasks` | List all kanban tasks by column |
 | `create_task` | Create a new task |
-| `update_task` | Update existing task (title, priority, tags, dates, body) |
+| `update_task` | Update existing task (title, priority, tags, swimlane, dates, body) |
 | `move_task` | Move task to another column |
 | `save_memory` | Save persistent memory for AI context |
 | `list_memories` | List saved memories |

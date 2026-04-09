@@ -3,6 +3,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 pub struct AppLayout {
     pub header: Rect,
     pub tab_bar: Rect,
+    pub swimlane_bar: Option<Rect>,
     pub columns: Vec<Rect>,
     pub sidebar: Option<Rect>,
     pub bottom_chat: Option<Rect>,
@@ -14,12 +15,17 @@ pub fn compute_layout(
     sidebar_open: bool,
     bottom_chat_open: bool,
     bottom_chat_height: u16,
+    show_swimlane_bar: bool,
 ) -> AppLayout {
-    // Vertical: header | tab_bar | main | (bottom_chat) | status_bar
+    // Vertical: header | tab_bar | (swimlane_bar) | main | (bottom_chat) | status_bar
     let mut v_constraints = vec![
         Constraint::Length(1), // header
         Constraint::Length(1), // tab bar
     ];
+
+    if show_swimlane_bar {
+        v_constraints.push(Constraint::Length(1)); // swimlane bar
+    }
 
     if bottom_chat_open {
         v_constraints.push(Constraint::Min(6)); // board (shrink to make room)
@@ -36,11 +42,23 @@ pub fn compute_layout(
 
     let header = vertical[0];
     let tab_bar = vertical[1];
-    let main_area = vertical[2];
-    let (bottom_chat, status_bar) = if bottom_chat_open {
-        (Some(vertical[3]), vertical[4])
+
+    let mut idx = 2;
+    let swimlane_bar = if show_swimlane_bar {
+        let bar = vertical[idx];
+        idx += 1;
+        Some(bar)
     } else {
-        (None, vertical[3])
+        None
+    };
+
+    let main_area = vertical[idx];
+    idx += 1;
+
+    let (bottom_chat, status_bar) = if bottom_chat_open {
+        (Some(vertical[idx]), vertical[idx + 1])
+    } else {
+        (None, vertical[idx])
     };
 
     // Horizontal: board columns | (sidebar)
@@ -64,6 +82,7 @@ pub fn compute_layout(
     AppLayout {
         header,
         tab_bar,
+        swimlane_bar,
         columns,
         sidebar,
         bottom_chat,

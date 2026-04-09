@@ -39,10 +39,11 @@
 - **AI 侧边栏** — 每任务AI对话 + 流式响应
 - **每任务会话** — 每个任务维护独立的AI对话历史，自动保存到磁盘
 - **内置工具** — AI可执行Shell命令、读写文件、搜索代码、创建/更新任务
-- **斜杠命令** — 17个命令用于看板管理、AI控制和认证
+- **斜杠命令** — 18个命令用于看板管理、AI控制和认证
 - **OAuth PKCE** — 通过claude.ai的浏览器登录
 - **鼠标支持** — 点击选择、拖拽滚动、点击聚焦输入
 - **文本选择** — 拖拽选择并复制AI响应
+- **泳道** — 基于标签页的泳道过滤，`[`/`]`键切换
 - **Notion风格链接** — 自动解析commit、PR、issue、branch引用
 - **任务日期** — 每任务开始日期/截止日期管理
 - **AI记忆** — 跨会话持久化的上下文记忆
@@ -50,26 +51,70 @@
 
 ## 安装
 
-### 快速安装
+### macOS
+
+#### 快速安装
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SteelCrab/icebox/main/install.sh | bash
 ```
 
-### Homebrew
+#### Homebrew
 
 ```bash
 brew tap SteelCrab/tap
 brew install icebox
 ```
 
-### 源码安装 (cargo install)
+#### 预构建二进制文件 (手动)
+
+从 [最新发布](https://github.com/SteelCrab/icebox/releases/latest) 下载：
+
+| 架构 | 文件 |
+|---|---|
+| Apple Silicon (arm64) | `icebox-aarch64-apple-darwin.tar.gz` |
+
+```bash
+tar -xzf icebox-aarch64-apple-darwin.tar.gz
+chmod +x icebox
+mv icebox ~/.local/bin/    # 或 $PATH 中的任何目录
+```
+
+### Linux
+
+#### 快速安装
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SteelCrab/icebox/main/install.sh | bash
+```
+
+#### 预构建二进制文件 (手动)
+
+从 [最新发布](https://github.com/SteelCrab/icebox/releases/latest) 下载：
+
+| 架构 | libc | 文件 |
+|---|---|---|
+| x86_64 | glibc | `icebox-x86_64-unknown-linux-gnu.tar.gz` |
+| x86_64 | musl (Alpine) | `icebox-x86_64-unknown-linux-musl.tar.gz` |
+| aarch64 | glibc | `icebox-aarch64-unknown-linux-gnu.tar.gz` |
+| aarch64 | musl (Alpine) | `icebox-aarch64-unknown-linux-musl.tar.gz` |
+| armv7 (Raspberry Pi 2/3) | gnueabihf | `icebox-armv7-unknown-linux-gnueabihf.tar.gz` |
+
+```bash
+tar -xzf icebox-<target>.tar.gz
+chmod +x icebox
+mv icebox ~/.local/bin/    # 或 $PATH 中的任何目录
+```
+
+### 源码构建 (任意系统)
+
+#### Cargo 安装
 
 ```bash
 cargo install --git https://github.com/SteelCrab/icebox.git
 ```
 
-### 源码构建
+#### 源码构建
 
 ```bash
 git clone https://github.com/SteelCrab/icebox.git
@@ -128,11 +173,13 @@ icebox whoami          # 查看认证状态
 | `n` | 新建任务 |
 | `d` | 删除任务 (y/Enter确认) |
 | `>/<` | 将任务移到下一/上一列 |
+| `[/]` | 泳道标签页切换 |
 | `/` | 切换底部AI聊天面板 |
 | `1/2` | 切换标签页 (Board / Memory) |
 | `r` | 刷新 |
 | `q`, `Ctrl+C` | 退出 |
 | 鼠标点击 | 选择任务 + 打开详情 |
+| 鼠标点击 (泳道栏) | 切换泳道 |
 | 鼠标滚动 | 导航 |
 
 ### Detail模式（侧边栏）
@@ -175,6 +222,7 @@ icebox whoami          # 查看认证状态
 | | `/search <query>` | 搜索任务 |
 | | `/export` | 导出看板为Markdown |
 | | `/diff` | Git diff |
+| | `/swimlane [name \| clear]` | 设置泳道/列表 |
 | **AI** | `/help` | 命令列表 |
 | | `/status` | 会话状态 |
 | | `/cost` | Token使用量 |
@@ -198,6 +246,7 @@ title: "任务标题"
 column: inprogress    # icebox | emergency | inprogress | testing | complete
 priority: high        # low | medium | high | critical
 tags: ["backend", "auth"]
+swimlane: "backend"
 start_date: "2026-04-01T00:00:00Z"
 due_date: "2026-04-10T00:00:00Z"
 created_at: "ISO8601"
@@ -237,7 +286,7 @@ crates/
   api/          # API — AnthropicClient, SSE流式传输, AuthMethod, 重试
   runtime/      # 运行时 — ConversationRuntime, Session, OAuth PKCE, UsageTracker
   tools/        # 12个工具 — bash, read/write_file, glob/grep_search, 看板 (list/create/update/move), 记忆
-  commands/     # 17个斜杠命令 (Board, AI, Auth, Session)
+  commands/     # 18个斜杠命令 (Board, AI, Auth, Session)
 ```
 
 ## 内置AI工具
@@ -251,7 +300,7 @@ crates/
 | `grep_search` | 通过正则表达式搜索文件内容 |
 | `list_tasks` | 看板任务列表 |
 | `create_task` | 新建任务 |
-| `update_task` | 更新现有任务（标题、优先级、标签、日期、正文） |
+| `update_task` | 更新现有任务（标题、优先级、标签、泳道、日期、正文） |
 | `move_task` | 任务列移动 |
 | `save_memory` | 保存AI上下文记忆 |
 | `list_memories` | 已保存记忆列表 |

@@ -379,6 +379,19 @@ fn render_task_detail<'a>(task: &'a Task, width: u16, lines: &mut Vec<Line<'a>>)
         ]));
     }
 
+    // Swimlane
+    if let Some(ref lane) = task.swimlane {
+        lines.push(Line::from(vec![
+            Span::styled("Swimlane: ", theme::dim_style()),
+            Span::styled(
+                lane.as_str(),
+                Style::default()
+                    .fg(ratatui::style::Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]));
+    }
+
     // Dependencies
     if !task.depends_on.is_empty() {
         let deps = task.depends_on.join(", ");

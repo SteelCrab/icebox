@@ -11,6 +11,7 @@ pub struct ColumnWidget<'a> {
     pub tasks: &'a [Task],
     pub focused: bool,
     pub selected_task: Option<usize>,
+    pub show_swimlane: bool,
 }
 
 #[derive(Default)]
@@ -69,7 +70,7 @@ impl<'a> StatefulWidget for ColumnWidget<'a> {
                 break;
             }
             let selected = self.selected_task == Some(i);
-            let lines = card::render_card(task, selected, inner.width);
+            let lines = card::render_card(task, selected, inner.width, self.show_swimlane);
             for line in &lines {
                 if y >= inner.y + inner.height {
                     break;

@@ -71,8 +71,7 @@ impl MemoryStore {
     }
 
     fn save(&self, entries: &[MemoryEntry]) -> Result<()> {
-        let json =
-            serde_json::to_string_pretty(entries).context("failed to serialize memory")?;
+        let json = serde_json::to_string_pretty(entries).context("failed to serialize memory")?;
         let tmp_path = self.memory_path.with_extension("json.tmp");
         fs::write(&tmp_path, &json)
             .with_context(|| format!("failed to write {}", tmp_path.display()))?;

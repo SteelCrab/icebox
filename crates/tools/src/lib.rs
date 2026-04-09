@@ -597,10 +597,7 @@ struct SaveMemoryInput {
     source: Option<String>,
 }
 
-fn execute_save_memory(
-    input: &str,
-    store: &icebox_task::memory::MemoryStore,
-) -> Result<String> {
+fn execute_save_memory(input: &str, store: &icebox_task::memory::MemoryStore) -> Result<String> {
     let parsed: SaveMemoryInput =
         serde_json::from_str(input).context("invalid save_memory input")?;
     let source = parsed.source.unwrap_or_else(|| "global".into());
@@ -631,10 +628,7 @@ struct DeleteMemoryInput {
     memory_id: String,
 }
 
-fn execute_delete_memory(
-    input: &str,
-    store: &icebox_task::memory::MemoryStore,
-) -> Result<String> {
+fn execute_delete_memory(input: &str, store: &icebox_task::memory::MemoryStore) -> Result<String> {
     let parsed: DeleteMemoryInput =
         serde_json::from_str(input).context("invalid delete_memory input")?;
     if store.delete(&parsed.memory_id)? {
@@ -649,10 +643,7 @@ fn execute_notion_sync(input: &str, store: &Arc<Mutex<TaskStore>>) -> Result<Str
         serde_json::from_str(input).context("invalid notion_sync input")?;
 
     let config = icebox_runtime::IceboxConfig::load();
-    let config_api_key = config
-        .notion
-        .as_ref()
-        .and_then(|n| n.api_key.as_deref());
+    let config_api_key = config.notion.as_ref().and_then(|n| n.api_key.as_deref());
 
     let client = match notion::NotionClient::from_env(config_api_key) {
         Ok(c) => c,
@@ -661,14 +652,16 @@ fn execute_notion_sync(input: &str, store: &Arc<Mutex<TaskStore>>) -> Result<Str
 
     match parsed.action.as_str() {
         "push" => {
-            let database_id = match config.notion.as_ref().and_then(|n| n.database_id.as_deref()) {
+            let database_id = match config
+                .notion
+                .as_ref()
+                .and_then(|n| n.database_id.as_deref())
+            {
                 Some(id) => id.to_string(),
                 None => {
-                    return Ok(
-                        "Notion 데이터베이스가 설정되지 않았습니다.\n\
+                    return Ok("Notion 데이터베이스가 설정되지 않았습니다.\n\
                          /notion push <parent-page-name> 으로 먼저 설정해주세요."
-                            .to_string(),
-                    );
+                        .to_string());
                 }
             };
 
@@ -683,19 +676,17 @@ fn execute_notion_sync(input: &str, store: &Arc<Mutex<TaskStore>>) -> Result<Str
                 Err(e) => Ok(format!("Notion 동기화 실패: {e}")),
             }
         }
-        "status" => {
-            match config.notion {
-                Some(ref n) if n.database_id.is_some() => {
-                    Ok(format!(
-                        "Notion 연결 상태:\n  Database ID: {}\n  Parent Page: {}",
-                        n.database_id.as_deref().unwrap_or("-"),
-                        n.parent_page_id.as_deref().unwrap_or("-"),
-                    ))
-                }
-                _ => Ok("Notion이 아직 설정되지 않았습니다.".to_string()),
-            }
-        }
-        other => Ok(format!("Unknown notion action: {other}. Use 'push' or 'status'.")),
+        "status" => match config.notion {
+            Some(ref n) if n.database_id.is_some() => Ok(format!(
+                "Notion 연결 상태:\n  Database ID: {}\n  Parent Page: {}",
+                n.database_id.as_deref().unwrap_or("-"),
+                n.parent_page_id.as_deref().unwrap_or("-"),
+            )),
+            _ => Ok("Notion이 아직 설정되지 않았습니다.".to_string()),
+        },
+        other => Ok(format!(
+            "Unknown notion action: {other}. Use 'push' or 'status'."
+        )),
     }
 }
 

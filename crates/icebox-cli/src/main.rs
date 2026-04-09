@@ -431,7 +431,10 @@ fn run_init(args: &[String]) -> Result<()> {
     if fresh {
         println!("Initialized icebox workspace at {}", icebox_dir.display());
     } else {
-        println!("Icebox workspace already exists at {}", icebox_dir.display());
+        println!(
+            "Icebox workspace already exists at {}",
+            icebox_dir.display()
+        );
     }
 
     Ok(())
@@ -473,8 +476,7 @@ impl Spinner {
     }
 
     fn stop(mut self) {
-        self.stop
-            .store(true, std::sync::atomic::Ordering::Relaxed);
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
         if let Some(h) = self.handle.take() {
             let _ = h.join();
         }
@@ -483,8 +485,7 @@ impl Spinner {
 
 impl Drop for Spinner {
     fn drop(&mut self) {
-        self.stop
-            .store(true, std::sync::atomic::Ordering::Relaxed);
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
         if let Some(h) = self.handle.take() {
             let _ = h.join();
         }
@@ -632,9 +633,7 @@ fn notion_cli_reset() -> Result<()> {
         return Ok(());
     }
     config.notion = None;
-    config
-        .save()
-        .context("Failed to save config")?;
+    config.save().context("Failed to save config")?;
     println!("Notion configuration cleared.");
     Ok(())
 }
@@ -696,6 +695,7 @@ fn notion_cli_push(page_name: Option<&str>) -> Result<()> {
     println!("Found: {} ({})", page.title, page.id);
 
     let spinner = Spinner::start("Creating Notion database");
+
     let create_result = client.create_database(&page.id);
     spinner.stop();
     let db_id = create_result?;
@@ -1059,10 +1059,9 @@ fn setup_ai_runtime(app: &mut App, workspace: &std::path::Path) {
         });
     });
 
-    let sender: icebox_tui::app::AiSender =
-        Box::new(move |cmd: icebox_runtime::RuntimeCommand| {
-            let _ = cmd_tx.send(cmd);
-        });
+    let sender: icebox_tui::app::AiSender = Box::new(move |cmd: icebox_runtime::RuntimeCommand| {
+        let _ = cmd_tx.send(cmd);
+    });
 
     app.set_ai_channel(tui_rx, sender, approval_tx);
 }

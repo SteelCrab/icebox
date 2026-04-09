@@ -7,6 +7,7 @@ use crossterm::event;
 use icebox_runtime::{AiEvent, RuntimeCommand};
 use icebox_task::model::{Column, Priority, Task};
 use icebox_task::store::TaskStore;
+use icebox_tools::notion::NotionPage;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
@@ -14,9 +15,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Padding, Paragraph};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use unicode_width::UnicodeWidthStr;
 use tokio::sync::mpsc;
-use icebox_tools::notion::NotionPage;
+use unicode_width::UnicodeWidthStr;
 
 /// Braille spinner frames for AI thinking animation (from openpista pattern).
 pub const SPINNER_FRAMES: &[char] = &['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'];
@@ -166,9 +166,11 @@ fn parse_date_input(input: &str) -> Option<chrono::DateTime<chrono::Utc>> {
     }
     // Try YYYY-MM-DD first
     if let Ok(naive) = chrono::NaiveDate::parse_from_str(trimmed, "%Y-%m-%d") {
-        let dt = naive
-            .and_hms_opt(0, 0, 0)?;
-        return Some(chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc));
+        let dt = naive.and_hms_opt(0, 0, 0)?;
+        return Some(chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
+            dt,
+            chrono::Utc,
+        ));
     }
     // Try full ISO8601 / RFC3339
     chrono::DateTime::parse_from_rfc3339(trimmed)
@@ -229,7 +231,11 @@ impl App {
             .ok()
             .and_then(|o| {
                 let branch = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                if branch.is_empty() { None } else { Some(branch) }
+                if branch.is_empty() {
+                    None
+                } else {
+                    Some(branch)
+                }
             });
         Ok(Self {
             mode: AppMode::Board,
@@ -495,14 +501,14 @@ impl App {
                         if self.sidebar_focused && !self.bottom_chat_focused {
                             // Input cursor: chat_area bottom - input border
                             if let Some(chat_rect) = self.sidebar.chat_rect {
-                                let input_y =
-                                    chat_rect.y + chat_rect.height.saturating_sub(3);
-                                let display_width =
-                                    self.sidebar.input.get(..self.sidebar.cursor_pos)
-                                        .map_or(0, UnicodeWidthStr::width);
-                                let input_x = chat_rect.x
-                                    + 2
-                                    + u16::try_from(display_width).unwrap_or(0);
+                                let input_y = chat_rect.y + chat_rect.height.saturating_sub(3);
+                                let display_width = self
+                                    .sidebar
+                                    .input
+                                    .get(..self.sidebar.cursor_pos)
+                                    .map_or(0, UnicodeWidthStr::width);
+                                let input_x =
+                                    chat_rect.x + 2 + u16::try_from(display_width).unwrap_or(0);
                                 frame.set_cursor_position((input_x, input_y));
                             }
                         }
@@ -521,10 +527,12 @@ impl App {
 
             if self.bottom_chat_focused {
                 let input_y = chat_area.y + chat_area.height.saturating_sub(2);
-                let display_width = self.bottom_chat.input.get(..self.bottom_chat.cursor_pos)
+                let display_width = self
+                    .bottom_chat
+                    .input
+                    .get(..self.bottom_chat.cursor_pos)
                     .map_or(0, UnicodeWidthStr::width);
-                let input_x =
-                    chat_area.x + 4 + u16::try_from(display_width).unwrap_or(0);
+                let input_x = chat_area.x + 4 + u16::try_from(display_width).unwrap_or(0);
                 frame.set_cursor_position((input_x, input_y));
             }
         }
@@ -560,9 +568,11 @@ impl App {
             frame.render_widget(block, modal_area);
 
             let tool_display: String = pending.tool_name.chars().take(20).collect();
-            let input_display: String = pending.tool_input.chars().take(
-                inner.width.saturating_sub(2) as usize,
-            ).collect();
+            let input_display: String = pending
+                .tool_input
+                .chars()
+                .take(inner.width.saturating_sub(2) as usize)
+                .collect();
 
             let lines = vec![
                 Line::from(vec![
@@ -577,11 +587,26 @@ impl App {
                 Line::from(Span::styled(input_display, theme::dim_style())),
                 Line::from(""),
                 Line::from(vec![
-                    Span::styled(" 1", Style::default().fg(ratatui::style::Color::Green).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        " 1",
+                        Style::default()
+                            .fg(ratatui::style::Color::Green)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                     Span::raw(":Yes  "),
-                    Span::styled("2", Style::default().fg(ratatui::style::Color::Cyan).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        "2",
+                        Style::default()
+                            .fg(ratatui::style::Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                     Span::raw(":Always  "),
-                    Span::styled("3", Style::default().fg(ratatui::style::Color::Red).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        "3",
+                        Style::default()
+                            .fg(ratatui::style::Color::Red)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                     Span::raw(":No"),
                 ]),
             ];
@@ -651,18 +676,17 @@ impl App {
 
     fn render_memory_view(&self, layout: &AppLayout, frame: &mut Frame) {
         // Use all column areas merged as the main content area
-        let area = if let (Some(first), Some(last)) =
-            (layout.columns.first(), layout.columns.last())
-        {
-            Rect::new(
-                first.x,
-                first.y,
-                last.x + last.width - first.x,
-                first.height,
-            )
-        } else {
-            return;
-        };
+        let area =
+            if let (Some(first), Some(last)) = (layout.columns.first(), layout.columns.last()) {
+                Rect::new(
+                    first.x,
+                    first.y,
+                    last.x + last.width - first.x,
+                    first.height,
+                )
+            } else {
+                return;
+            };
 
         let block = Block::default()
             .title(" Memory ")
@@ -676,10 +700,7 @@ impl App {
         if self.memory_entries.is_empty() {
             let help = Paragraph::new(vec![
                 Line::from(""),
-                Line::from(Span::styled(
-                    "No memories saved yet.",
-                    theme::dim_style(),
-                )),
+                Line::from(Span::styled("No memories saved yet.", theme::dim_style())),
                 Line::from(""),
                 Line::from(Span::styled(
                     "Use /remember <text> in chat to save a memory.",
@@ -882,8 +903,8 @@ impl App {
         // Cursor position
         match self.edit_field {
             EditField::Title => {
-                let cx =
-                    title_inner.x + u16::try_from(UnicodeWidthStr::width(self.edit_title.as_str())).unwrap_or(0);
+                let cx = title_inner.x
+                    + u16::try_from(UnicodeWidthStr::width(self.edit_title.as_str())).unwrap_or(0);
                 frame.set_cursor_position((cx, title_inner.y));
             }
             EditField::Body => {
@@ -1080,11 +1101,8 @@ impl App {
 
         if self.bottom_chat_focused {
             block = block.title_bottom(
-                Line::from(Span::styled(
-                    " Ctrl+↑↓: resize ",
-                    theme::dim_style(),
-                ))
-                .alignment(ratatui::layout::Alignment::Right),
+                Line::from(Span::styled(" Ctrl+↑↓: resize ", theme::dim_style()))
+                    .alignment(ratatui::layout::Alignment::Right),
             );
         }
 
@@ -1117,10 +1135,7 @@ impl App {
             match msg.role {
                 MessageRole::User => {
                     lines.push(Line::from(vec![
-                        Span::styled(
-                            "⏺ ",
-                            Style::default().fg(ratatui::style::Color::Cyan),
-                        ),
+                        Span::styled("⏺ ", Style::default().fg(ratatui::style::Color::Cyan)),
                         Span::styled(
                             &msg.content,
                             Style::default()
@@ -1261,7 +1276,10 @@ impl App {
         let area = frame.area();
         // +2 for border top/bottom
         let content_h = lines.len() as u16 + 2;
-        let max_h = anchor_rect.y.saturating_sub(area.y).min(area.height.saturating_sub(4));
+        let max_h = anchor_rect
+            .y
+            .saturating_sub(area.y)
+            .min(area.height.saturating_sub(4));
         let popup_h = content_h.min(max_h).max(4);
         let popup_w = 60.min(area.width.saturating_sub(2));
 
@@ -1343,9 +1361,8 @@ impl App {
         let inner = block.inner(modal_area);
         frame.render_widget(block, modal_area);
 
-        let cursor = |field: CreateField| -> &str {
-            if self.create_field == field { "_" } else { "" }
-        };
+        let cursor =
+            |field: CreateField| -> &str { if self.create_field == field { "_" } else { "" } };
         let label_style = |field: CreateField| -> Style {
             if self.create_field == field {
                 Style::default().fg(ratatui::style::Color::Cyan)
@@ -1360,16 +1377,18 @@ impl App {
         } else {
             ""
         };
-        let start_hint = if self.create_start_date.is_empty() && self.create_field == CreateField::StartDate {
-            "YYYY-MM-DD (optional)"
-        } else {
-            ""
-        };
-        let due_hint = if self.create_due_date.is_empty() && self.create_field == CreateField::DueDate {
-            "YYYY-MM-DD (optional)"
-        } else {
-            ""
-        };
+        let start_hint =
+            if self.create_start_date.is_empty() && self.create_field == CreateField::StartDate {
+                "YYYY-MM-DD (optional)"
+            } else {
+                ""
+            };
+        let due_hint =
+            if self.create_due_date.is_empty() && self.create_field == CreateField::DueDate {
+                "YYYY-MM-DD (optional)"
+            } else {
+                ""
+            };
 
         let lines = vec![
             Line::from(vec![
@@ -1700,9 +1719,7 @@ impl App {
                             .as_ref()
                             .and_then(|n| n.api_key.as_deref())
                             .map(String::from);
-                        match icebox_tools::notion::NotionClient::from_env(
-                            config_key.as_deref(),
-                        ) {
+                        match icebox_tools::notion::NotionClient::from_env(config_key.as_deref()) {
                             Ok(client) => match client.verify_key() {
                                 Ok(name) => {
                                     format!("  API Key: {source} — valid (bot: {name})")
@@ -1798,15 +1815,14 @@ impl App {
             self.notify_rx = Some(rx);
 
             std::thread::spawn(move || {
-                let client = match icebox_tools::notion::NotionClient::from_env(
-                    config_api_key.as_deref(),
-                ) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        let _ = tx.send(format!("Notion connection failed: {e}"));
-                        return;
-                    }
-                };
+                let client =
+                    match icebox_tools::notion::NotionClient::from_env(config_api_key.as_deref()) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            let _ = tx.send(format!("Notion connection failed: {e}"));
+                            return;
+                        }
+                    };
                 match client.sync_tasks(&db_id, &tasks) {
                     Ok(result) => {
                         let _ = tx.send(result.to_string());
@@ -1829,9 +1845,7 @@ impl App {
                         let chat = self.active_chat_messages();
                         chat.push(SidebarMessage {
                             role: MessageRole::System,
-                            content: format!(
-                                "Invalid number. Choose from 1 to {cache_len}.",
-                            ),
+                            content: format!("Invalid number. Choose from 1 to {cache_len}.",),
                         });
                         return;
                     }
@@ -1922,7 +1936,13 @@ impl App {
                     }
                     msg.push_str("\nSelect with /notion push <number>");
                     // Send page list as JSON for caching
-                    let _ = tx.send(format!("__PAGES__:{}", serde_json::to_string(&pages.iter().map(|p| (&p.id, &p.title)).collect::<Vec<_>>()).unwrap_or_default()));
+                    let _ = tx.send(format!(
+                        "__PAGES__:{}",
+                        serde_json::to_string(
+                            &pages.iter().map(|p| (&p.id, &p.title)).collect::<Vec<_>>()
+                        )
+                        .unwrap_or_default()
+                    ));
                     let _ = tx.send(msg);
                 });
             }
@@ -1967,7 +1987,13 @@ impl App {
                         msg.push_str(&format!("  {}. {}\n", i + 1, page.title));
                     }
                     msg.push_str("\nSelect a target page with /notion push <number>");
-                    let _ = tx.send(format!("__PAGES__:{}", serde_json::to_string(&pages.iter().map(|p| (&p.id, &p.title)).collect::<Vec<_>>()).unwrap_or_default()));
+                    let _ = tx.send(format!(
+                        "__PAGES__:{}",
+                        serde_json::to_string(
+                            &pages.iter().map(|p| (&p.id, &p.title)).collect::<Vec<_>>()
+                        )
+                        .unwrap_or_default()
+                    ));
                     let _ = tx.send(msg);
                 });
             }
@@ -2009,15 +2035,14 @@ impl App {
         self.notify_rx = Some(rx);
 
         std::thread::spawn(move || {
-            let client = match icebox_tools::notion::NotionClient::from_env(
-                config_api_key.as_deref(),
-            ) {
-                Ok(c) => c,
-                Err(e) => {
-                    let _ = tx.send(format!("Notion connection failed: {e}"));
-                    return;
-                }
-            };
+            let client =
+                match icebox_tools::notion::NotionClient::from_env(config_api_key.as_deref()) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        let _ = tx.send(format!("Notion connection failed: {e}"));
+                        return;
+                    }
+                };
 
             let remote_tasks = match client.pull_tasks(&db_id) {
                 Ok(t) => t,
@@ -2104,11 +2129,7 @@ impl App {
         });
     }
 
-    fn notion_setup_and_sync(
-        &mut self,
-        page: NotionPage,
-        config_api_key: Option<String>,
-    ) {
+    fn notion_setup_and_sync(&mut self, page: NotionPage, config_api_key: Option<String>) {
         let tasks = self.store.list().unwrap_or_default();
         self.set_status("Creating Notion DB and syncing...", false);
         self.notion_busy = Some("Creating Notion DB and syncing".to_string());
@@ -2117,15 +2138,14 @@ impl App {
         self.notify_rx = Some(rx);
 
         std::thread::spawn(move || {
-            let client = match icebox_tools::notion::NotionClient::from_env(
-                config_api_key.as_deref(),
-            ) {
-                Ok(c) => c,
-                Err(e) => {
-                    let _ = tx.send(format!("Notion connection failed: {e}"));
-                    return;
-                }
-            };
+            let client =
+                match icebox_tools::notion::NotionClient::from_env(config_api_key.as_deref()) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        let _ = tx.send(format!("Notion connection failed: {e}"));
+                        return;
+                    }
+                };
 
             let _ = tx.send(format!(
                 "Creating Icebox Kanban database under '{}'...",
@@ -2134,9 +2154,7 @@ impl App {
 
             match client.create_database(&page.id) {
                 Ok(db_id) => {
-                    if let Err(e) =
-                        icebox_runtime::IceboxConfig::save_notion(&db_id, &page.id)
-                    {
+                    if let Err(e) = icebox_runtime::IceboxConfig::save_notion(&db_id, &page.id) {
                         let _ = tx.send(format!("Failed to save config: {e}"));
                         return;
                     }
@@ -2499,7 +2517,8 @@ impl App {
                     None => {
                         self.sidebar.messages.push(SidebarMessage {
                             role: MessageRole::System,
-                            content: "Usage: /move <icebox|emergency|inprogress|testing|complete>".into(),
+                            content: "Usage: /move <icebox|emergency|inprogress|testing|complete>"
+                                .into(),
                         });
                     }
                     Some(col) => {
@@ -2539,12 +2558,14 @@ impl App {
                     } else {
                         self.sidebar.messages.push(SidebarMessage {
                             role: MessageRole::System,
-                            content: "Usage: /delete <task-id-prefix> or select a task first".into(),
+                            content: "Usage: /delete <task-id-prefix> or select a task first"
+                                .into(),
                         });
                     }
                 } else {
                     let tasks = self.store.list().unwrap_or_default();
-                    let matching: Vec<&Task> = tasks.iter().filter(|t| t.id.starts_with(&prefix)).collect();
+                    let matching: Vec<&Task> =
+                        tasks.iter().filter(|t| t.id.starts_with(&prefix)).collect();
                     match matching.len() {
                         0 => self.set_status(format!("No task matching '{prefix}'"), true),
                         1 => {
@@ -2558,7 +2579,9 @@ impl App {
                                 Err(e) => self.set_status(format!("Delete failed: {e}"), true),
                             }
                         }
-                        n => self.set_status(format!("Ambiguous: {n} tasks match '{prefix}'"), true),
+                        n => {
+                            self.set_status(format!("Ambiguous: {n} tasks match '{prefix}'"), true)
+                        }
                     }
                 }
             }
@@ -2573,7 +2596,10 @@ impl App {
                     let tasks = self.store.list().unwrap_or_default();
                     let results: Vec<&Task> = tasks
                         .iter()
-                        .filter(|t| t.title.to_lowercase().contains(&q) || t.tags.iter().any(|tag| tag.to_lowercase().contains(&q)))
+                        .filter(|t| {
+                            t.title.to_lowercase().contains(&q)
+                                || t.tags.iter().any(|tag| tag.to_lowercase().contains(&q))
+                        })
                         .collect();
                     if results.is_empty() {
                         self.sidebar.messages.push(SidebarMessage {
@@ -2607,8 +2633,10 @@ impl App {
                         output.push_str("_(empty)_\n");
                     } else {
                         for t in &col_tasks {
-                            output.push_str(&format!("- [{}] {} ({})\n",
-                                t.priority.label(), t.title,
+                            output.push_str(&format!(
+                                "- [{}] {} ({})\n",
+                                t.priority.label(),
+                                t.title,
                                 t.tags.join(", ")
                             ));
                         }

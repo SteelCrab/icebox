@@ -252,10 +252,7 @@ pub fn render_sidebar(
             match msg.role {
                 MessageRole::User => {
                     chat_lines.push(Line::from(vec![
-                        Span::styled(
-                            "⏺ ",
-                            Style::default().fg(ratatui::style::Color::Cyan),
-                        ),
+                        Span::styled("⏺ ", Style::default().fg(ratatui::style::Color::Cyan)),
                         Span::styled(
                             &msg.content,
                             Style::default()
@@ -460,7 +457,9 @@ fn render_task_detail<'a>(task: &'a Task, width: u16, lines: &mut Vec<Line<'a>>)
                     || ll.starts_with("pr ")
                     || ll.starts_with("issue#")
                     || ll.starts_with("issue ")
-                    || ll.starts_with('#') && ll.len() > 1 && ll.as_bytes().get(1).is_some_and(|b| b.is_ascii_digit());
+                    || ll.starts_with('#')
+                        && ll.len() > 1
+                        && ll.as_bytes().get(1).is_some_and(|b| b.is_ascii_digit());
                 if !is_link_line {
                     all_links = false;
                     break;
@@ -567,10 +566,7 @@ pub fn render_markdown_lines<'a>(content: &str, lines: &mut Vec<Line<'a>>) {
                 } else {
                     lines.push(Line::from(vec![
                         Span::styled("  ┌─ ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(
-                            lang.to_string(),
-                            Style::default().fg(Color::Yellow),
-                        ),
+                        Span::styled(lang.to_string(), Style::default().fg(Color::Yellow)),
                         Span::styled(" ─────", Style::default().fg(Color::DarkGray)),
                     ]));
                 }
@@ -587,10 +583,7 @@ pub fn render_markdown_lines<'a>(content: &str, lines: &mut Vec<Line<'a>>) {
         if in_code_block {
             lines.push(Line::from(vec![
                 Span::styled("  │ ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    raw_line.to_string(),
-                    Style::default().fg(Color::Green),
-                ),
+                Span::styled(raw_line.to_string(), Style::default().fg(Color::Green)),
             ]));
             continue;
         }
@@ -663,10 +656,7 @@ pub fn render_markdown_lines<'a>(content: &str, lines: &mut Vec<Line<'a>>) {
             let num = &trimmed[..pos + 1];
             let mut spans = vec![
                 Span::styled("  ", Style::default()),
-                Span::styled(
-                    format!("{num} "),
-                    Style::default().fg(Color::Cyan),
-                ),
+                Span::styled(format!("{num} "), Style::default().fg(Color::Cyan)),
             ];
             render_inline_markdown(rest, &mut spans);
             lines.push(Line::from(spans));
@@ -675,7 +665,10 @@ pub fn render_markdown_lines<'a>(content: &str, lines: &mut Vec<Line<'a>>) {
 
         // Table rows
         if trimmed.starts_with('|') && trimmed.ends_with('|') {
-            if trimmed.chars().all(|c| c == '|' || c == '-' || c == ':' || c == ' ') {
+            if trimmed
+                .chars()
+                .all(|c| c == '|' || c == '-' || c == ':' || c == ' ')
+            {
                 // Separator row
                 lines.push(Line::from(Span::styled(
                     format!("  {trimmed}"),
@@ -748,9 +741,7 @@ fn render_inline_markdown<'a>(text: &str, spans: &mut Vec<Span<'a>>) {
             if let Some(end) = after.find('`') {
                 spans.push(Span::styled(
                     after[..end].to_string(),
-                    Style::default()
-                        .fg(Color::Green)
-                        .bg(Color::Rgb(30, 30, 30)),
+                    Style::default().fg(Color::Green).bg(Color::Rgb(30, 30, 30)),
                 ));
                 remaining = &after[end + 1..];
                 continue;
@@ -781,10 +772,18 @@ pub fn render_system_message_line(content: &str) -> Line<'static> {
     use ratatui::style::Color;
 
     if content.starts_with("[tool: bash]") {
-        let detail = content.strip_prefix("[tool: bash]").unwrap_or_default().trim();
+        let detail = content
+            .strip_prefix("[tool: bash]")
+            .unwrap_or_default()
+            .trim();
         Line::from(vec![
             Span::styled("⏺ ", Style::default().fg(Color::Green)),
-            Span::styled("bash ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "bash ",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(
                 truncate_display(detail, 80),
                 Style::default().fg(Color::DarkGray),
@@ -801,7 +800,9 @@ pub fn render_system_message_line(content: &str) -> Line<'static> {
             Span::styled("⏺ ", Style::default().fg(Color::Yellow)),
             Span::styled(
                 format!("{} ", inner.0),
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 truncate_display(&inner.1, 80),
@@ -810,7 +811,11 @@ pub fn render_system_message_line(content: &str) -> Line<'static> {
         ])
     } else if content.contains(" result]") || content.contains(" ERROR]") {
         let is_error = content.contains("ERROR]");
-        let color = if is_error { Color::Red } else { Color::DarkGray };
+        let color = if is_error {
+            Color::Red
+        } else {
+            Color::DarkGray
+        };
         // Extract just the output part after the bracket
         let output = content
             .find(']')
@@ -820,10 +825,7 @@ pub fn render_system_message_line(content: &str) -> Line<'static> {
         let prefix: String = content.chars().take(prefix_end).collect();
         Line::from(vec![
             Span::styled("  ", Style::default()),
-            Span::styled(
-                truncate_display(&prefix, 25),
-                Style::default().fg(color),
-            ),
+            Span::styled(truncate_display(&prefix, 25), Style::default().fg(color)),
             Span::raw(" "),
             Span::styled(
                 truncate_display(output, 60),
@@ -833,10 +835,7 @@ pub fn render_system_message_line(content: &str) -> Line<'static> {
     } else if content.starts_with("Error:") {
         Line::from(vec![
             Span::styled("⏺ ", Style::default().fg(Color::Red)),
-            Span::styled(
-                content.to_string(),
-                Style::default().fg(Color::Red),
-            ),
+            Span::styled(content.to_string(), Style::default().fg(Color::Red)),
         ])
     } else {
         Line::from(vec![

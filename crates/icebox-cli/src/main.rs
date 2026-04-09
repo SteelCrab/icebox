@@ -638,6 +638,10 @@ fn notion_cli_reset() -> Result<()> {
     Ok(())
 }
 
+fn notion_db_url(db_id: &str) -> String {
+    format!("https://www.notion.so/{}", db_id.replace('-', ""))
+}
+
 fn notion_cli_push(page_name: Option<&str>) -> Result<()> {
     let config = icebox_runtime::IceboxConfig::load();
     let config_api_key = config
@@ -663,6 +667,7 @@ fn notion_cli_push(page_name: Option<&str>) -> Result<()> {
         spinner.stop();
         let result = result?;
         println!("{result}");
+        println!("  → {}", notion_db_url(db_id));
         return Ok(());
     }
 
@@ -710,6 +715,7 @@ fn notion_cli_push(page_name: Option<&str>) -> Result<()> {
     spinner.stop();
     let result = sync_result?;
     println!("{result}");
+    println!("  → {}", notion_db_url(&db_id));
 
     Ok(())
 }
@@ -795,6 +801,7 @@ fn notion_cli_pull() -> Result<()> {
     println!(
         "Pull complete: {created} created, {updated} updated, {unchanged} unchanged, {deleted} deleted"
     );
+    println!("  → {}", notion_db_url(&db_id));
     if !deleted_titles.is_empty() {
         println!();
         println!("Deleted locally (removed from Notion):");

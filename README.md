@@ -48,6 +48,7 @@ A terminal-based kanban board built with Rust, featuring an integrated AI assist
 - **Swimlanes** — Tab-based swimlane filtering with `[`/`]` navigation
 - **AI Memory** — Persistent memory across sessions for AI context
 - **Task Storage** — Markdown files with YAML frontmatter (`.icebox/tasks/`)
+- **Web UI** — Responsive local kanban board in the browser via `icebox-web`
 
 ## Installation
 
@@ -276,6 +277,17 @@ AI sessions are persisted per task in `.icebox/sessions/{task_id}.json`.
 └── memory.json         # AI memory entries
 ```
 
+## Web UI
+
+`icebox-web` is a lightweight local web server that renders your board in the browser. It reads the same `.icebox/tasks/` files as the TUI — no separate data store.
+
+```bash
+cargo build --release -p icebox-web
+./target/release/icebox-web   # opens at http://localhost:3000
+```
+
+See the **[Web UI Guide](docs/web.md)** for options, responsive layout details, and architecture.
+
 ## Architecture
 
 ```
@@ -287,6 +299,7 @@ crates/
   runtime/      # Runtime — ConversationRuntime, Session, OAuth PKCE, UsageTracker
   tools/        # 12 tools — bash, read/write_file, glob/grep_search, kanban (list/create/update/move), memory
   commands/     # 18 slash commands (Board, AI, Auth, Session)
+  icebox-web/   # Web UI — Axum HTTP server + responsive single-page kanban
 ```
 
 ## Built-in AI Tools

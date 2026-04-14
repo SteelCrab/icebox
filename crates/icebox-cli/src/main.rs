@@ -52,7 +52,7 @@ fn print_help() {
     println!("  icebox [path]         Launch the TUI kanban board at the given path");
     println!("  icebox init           Initialize .icebox/ workspace (current directory)");
     println!("  icebox init [path]    Initialize .icebox/ workspace at the given path");
-    println!("  icebox init --all     Also set up .mcp.json and Claude Code memory (prompts for each)");
+    println!("  icebox init --all     ★ Recommended — also sets up .mcp.json + Claude Code memory");
     println!("  icebox login          Authenticate via OAuth (opens browser)");
     println!("  icebox logout         Clear saved credentials");
     println!("  icebox whoami         Show current authentication status");

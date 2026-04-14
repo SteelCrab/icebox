@@ -1,0 +1,102 @@
+# Sync release notes from CHANGELOG.md + auto-tag new versions
+#
+# When CHANGELOG.md is updated on main (e.g., via PR merge), this workflow:
+#   1. For every `## vX.Y.Z` section in CHANGELOG.md,
+#      - If no matching tag exists → create the tag at main HEAD and push it
+#        (this triggers release.yml which builds binaries + creates the release).
+#      - If tag exists and release exists → update the release body from CHANGELOG.
+#
+# Idempotent: no-op if everything is already in sync.
+
+name: Sync release notes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - CHANGELOG.md
+      - .github/workflows/sync-release-notes.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    name: Sync CHANGELOG → tags + release bodies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0      # Need full history to check tags
+
+      - name: Auto-tag new CHANGELOG versions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tagged=0
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          while IFS= read -r TAG; do
+            # Skip if tag already exists (local or remote)
+            if git rev-parse "$TAG" >/dev/null 2>&1; then
+              echo "tag $TAG already exists — skip"
+              continue
+            fi
+            if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
+              echo "remote tag $TAG already exists — skip"
+              continue
+            fi
+
+            echo "creating tag $TAG at main HEAD"
+            git tag -a "$TAG" -m "$TAG"
+            git push origin "$TAG"
+            tagged=$((tagged+1))
+          done < <(grep -E '^## v[0-9]' CHANGELOG.md | sed 's/^## //')
+
+          echo "Summary: $tagged new tags pushed"
+
+      - name: Update release bodies for existing releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          updated=0
+          skipped=0
+          missing=0
+
+          while IFS= read -r TAG; do
+            NOTES=$(awk "/^## ${TAG//./\\.}\$/{found=1; next} /^## v[0-9]/{if(found) exit} found" CHANGELOG.md)
+            if [ -z "$NOTES" ]; then
+              skipped=$((skipped+1))
+              continue
+            fi
+
+            # Skip releases that don't exist yet — release.yml (triggered by the
+            # tag push above) will create them with CHANGELOG content on its own.
+            if ! gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
+              echo "skip $TAG — release will be created by release.yml"
+              missing=$((missing+1))
+              continue
+            fi
+
+            # Skip if body already in sync
+            CURRENT=$(gh release view "$TAG" -R "$REPO" --json body -q .body)
+            if [ "$CURRENT" = "$NOTES" ]; then
+              skipped=$((skipped+1))
+              continue
+            fi
+
+            echo "$NOTES" > /tmp/notes-$TAG.md
+            gh release edit "$TAG" -R "$REPO" --notes-file /tmp/notes-$TAG.md
+            echo "updated $TAG"
+            updated=$((updated+1))
+          done < <(grep -E '^## v[0-9]' CHANGELOG.md | sed 's/^## //')
+
+          echo "Summary: $updated updated, $skipped unchanged, $missing deferred to release.yml"

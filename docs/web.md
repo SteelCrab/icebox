@@ -1,73 +1,101 @@
-# Web UI Guide
+# Web UI Guideline
 
-> A lightweight local web server that renders your icebox board in the browser.
-> Reads the same `.icebox/tasks/` files as the TUI — no separate data store.
+> Use the icebox kanban board in the browser.
 
 ## Quick Start
 
 ```bash
-# From source
-cargo run -p icebox-web
-
-# Release build
-cargo build --release -p icebox-web
+cargo run -p icebox-web              # dev build
+cargo build --release -p icebox-web  # release build
 ./target/release/icebox-web
 ```
 
-Then open **http://localhost:3000** in your browser.
+Open **http://localhost:3000**.
 
 ## Options
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--path <PATH>` | Workspace directory (must contain `.icebox/`) | `.` |
+| `--path <PATH>` | Workspace directory containing `.icebox/` | `.` |
 | `--port <PORT>` | Port to listen on | `3000` |
 
 ```bash
 icebox-web --path ./my-board --port 8080
 ```
 
-## Responsive Layout
+## Board
 
-The board adapts to the viewport automatically — no configuration needed.
-
-| Viewport | Layout |
-|----------|--------|
-| ≥ 900 px | 5-column horizontal kanban (all columns visible side-by-side) |
-| 600–899 px | Tab bar at the top — tap a column name to switch |
-| < 600 px | Tab bar + modal slides up from the bottom of the screen |
+- **Desktop** (900px+): All 5 columns side-by-side
+- **Tablet** (600-899px): Tab bar to switch columns
+- **Mobile** (<600px): Tab bar + bottom-sheet modal
 
 ## Card Detail
 
-Click any card to open a detail view showing:
+Click a card to open its detail modal:
 
-- Title and priority
-- Column and swimlane
-- Created, start, and due dates
-- Progress (`done / total`) if set
+- Title, priority, column, swimlane
+- Created, start, due dates, progress
 - Tags
-- Full task body (markdown source)
+- Body (rendered as markdown)
 
 Press `Esc` or click the backdrop to close.
 
-## Architecture
+## Moving Tasks
 
-`icebox-web` is a standalone Axum HTTP server (`crates/icebox-web/`).
+Drag a card and drop it into another column. The board refreshes automatically.
 
-| Route | Description |
-|-------|-------------|
-| `GET /` | Serves the single-page HTML app (embedded at compile time) |
-| `GET /api/tasks` | Returns all tasks as a JSON array |
+## Swimlane Filter
 
-The frontend is plain HTML + CSS + vanilla JS with no build step or external dependencies. It polls `/api/tasks` on load and on each **Refresh** click.
+Use the dropdown in the top-right corner:
 
-## Task Data
+- **All**: Show every task
+- **@name**: Show only tasks in that swimlane
 
-Tasks are read directly from `.icebox/tasks/*.md` — the same markdown files
-the TUI writes. Changes made in the TUI are visible after pressing **Refresh**
-in the browser.
+## AI Chat
 
-See [Task Storage](../README.md#task-storage) for the file format.
+Click the **AI Chat** button (bottom-right) to open the chat panel.
+
+### Authentication
+
+Set one of the following:
+
+```bash
+export ANTHROPIC_API_KEY=sk-...   # API key (recommended)
+icebox login                      # OAuth login
+```
+
+### Usage
+
+1. Type a message and press `Enter` or click **Send**
+2. Responses stream in real-time
+3. The board refreshes automatically after each AI turn
+
+### Switching Models
+
+Use the model dropdown in the chat header:
+
+| Model | Best for |
+|-------|----------|
+| Opus | Complex work |
+| Sonnet | Everyday tasks |
+| Haiku | Quick answers |
+
+### Effort Level
+
+Select effort from the dropdown next to the model (Low / Medium / High / Max).
+
+### Resizing the Panel
+
+Drag the handle (horizontal bar) at the top of the chat panel up or down.
+
+### Clearing the Session
+
+Click the **Clear** button to reset conversation history.
+
+## Data
+
+Reads and writes the same `.icebox/tasks/*.md` files as the TUI.
+TUI changes appear after clicking **Refresh**. Web changes appear in the TUI immediately.
 
 ## Building from Source
 
@@ -79,8 +107,3 @@ cp target/release/icebox-web ~/.local/bin/
 ```
 
 Requires Rust edition 2024 (`rustup update stable`).
-
-## References
-
-- icebox repository: https://github.com/SteelCrab/icebox
-- Related: [Swimlane Guide](./swimlane.md)

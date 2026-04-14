@@ -21,5 +21,10 @@ reqwest = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
+
+[target.'cfg(not(windows))'.dependencies]
 flate2 = { workspace = true }
 tar = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+zip = { workspace = true }

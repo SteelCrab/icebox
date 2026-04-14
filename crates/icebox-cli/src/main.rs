@@ -727,8 +727,39 @@ fn current_target() -> Option<&'static str> {
     { return Some("aarch64-unknown-linux-musl"); }
     #[cfg(all(target_os = "linux", target_arch = "arm"))]
     { return Some("armv7-unknown-linux-gnueabihf"); }
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    { return Some("x86_64-pc-windows-msvc"); }
+    #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
+    { return Some("aarch64-pc-windows-msvc"); }
     #[allow(unreachable_code)]
     None
+}
+
+/// Archive file extension for the current platform's release asset.
+fn archive_ext() -> &'static str {
+    if cfg!(windows) { "zip" } else { "tar.gz" }
+}
+
+/// Expected binary filename inside the release archive.
+fn binary_name() -> &'static str {
+    if cfg!(windows) { "icebox.exe" } else { "icebox" }
+}
+
+/// Extract the downloaded archive bytes into `dest` directory.
+#[cfg(not(windows))]
+fn extract_archive(bytes: &[u8], dest: &std::path::Path) -> Result<()> {
+    let decoder = flate2::read::GzDecoder::new(bytes);
+    let mut archive = tar::Archive::new(decoder);
+    archive.unpack(dest).context("failed to extract tar.gz archive")?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn extract_archive(bytes: &[u8], dest: &std::path::Path) -> Result<()> {
+    let reader = std::io::Cursor::new(bytes);
+    let mut archive = zip::ZipArchive::new(reader).context("failed to open zip archive")?;
+    archive.extract(dest).context("failed to extract zip archive")?;
+    Ok(())
 }
 
 fn is_newer(latest: &str, current: &str) -> bool {
@@ -751,13 +782,16 @@ fn run_upgrade() -> Result<()> {
     println!("  Target:  {target}");
     println!();
 
-    // Homebrew detection: warn and exit
+    // Homebrew detection (Unix only): warn and exit
     let exe_path = env::current_exe().context("failed to detect current executable path")?;
-    let exe_str = exe_path.display().to_string();
-    if exe_str.contains("/Cellar/") || exe_str.contains("/homebrew/") {
-        println!("  Homebrew installation detected.");
-        println!("  Use: brew upgrade icebox");
-        return Ok(());
+    #[cfg(not(windows))]
+    {
+        let exe_str = exe_path.display().to_string();
+        if exe_str.contains("/Cellar/") || exe_str.contains("/homebrew/") {
+            println!("  Homebrew installation detected.");
+            println!("  Use: brew upgrade icebox");
+            return Ok(());
+        }
     }
 
     // Fetch latest release from GitHub API
@@ -799,7 +833,7 @@ fn run_upgrade() -> Result<()> {
     println!();
 
     // Download binary archive
-    let asset = format!("icebox-{target}.tar.gz");
+    let asset = format!("icebox-{target}.{}", archive_ext());
     let url = format!("https://github.com/{GITHUB_REPO}/releases/download/{tag}/{asset}");
     println!("  Downloading {asset}...");
 
@@ -821,24 +855,20 @@ fn run_upgrade() -> Result<()> {
     let size_mb = bytes.len() as f64 / 1_048_576.0;
     println!("  Downloaded {size_mb:.1} MB");
 
-    // Extract binary from tar.gz
+    // Extract binary from archive
     println!("  Extracting...");
     let tmp_dir = tempdir().context("failed to create temp directory")?;
-    let decoder = flate2::read::GzDecoder::new(&bytes[..]);
-    let mut archive = tar::Archive::new(decoder);
-    archive
-        .unpack(&tmp_dir)
-        .context("failed to extract archive")?;
+    extract_archive(&bytes, &tmp_dir)?;
 
-    let new_binary = tmp_dir.join("icebox");
+    let new_binary = tmp_dir.join(binary_name());
     if !new_binary.exists() {
-        anyhow::bail!("archive did not contain an 'icebox' binary");
+        anyhow::bail!("archive did not contain '{}' binary", binary_name());
     }
 
     // Replace current binary
     println!("  Installing...");
 
-    // Set executable permission
+    // Set executable permission (Unix only — Windows uses file extension for this)
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -847,20 +877,29 @@ fn run_upgrade() -> Result<()> {
             .context("failed to set executable permission")?;
     }
 
-    // Atomic replace: try rename first, fall back to copy
+    // Atomic replace: rename current exe to .old, move new exe in place.
+    // Windows can't overwrite a running .exe but CAN rename it, so this works
+    // on all platforms. The .old file is left for OS to clean up on next run.
     let backup = exe_path.with_extension("old");
+    // Remove any stale .old from previous upgrade (ignore error — may not exist)
+    let _ = fs::remove_file(&backup);
     if fs::rename(&exe_path, &backup).is_ok() {
         if let Err(e) = fs::rename(&new_binary, &exe_path) {
             // Restore backup on failure
             let _ = fs::rename(&backup, &exe_path);
             return Err(e).context("failed to install new binary");
         }
+        // Try to clean up backup. On Windows this may fail if the old exe is
+        // still in use — that's fine, it will be cleaned up next time.
         let _ = fs::remove_file(&backup);
     } else {
-        // rename failed (cross-device): copy instead
-        fs::copy(&new_binary, &exe_path).context(
-            "failed to replace binary. Permission denied? Try: sudo icebox upgrade",
-        )?;
+        // rename failed (cross-device on Unix): copy instead
+        let hint = if cfg!(windows) {
+            "failed to replace binary. Run as Administrator."
+        } else {
+            "failed to replace binary. Permission denied? Try: sudo icebox upgrade"
+        };
+        fs::copy(&new_binary, &exe_path).context(hint)?;
     }
 
     // Cleanup

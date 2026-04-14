@@ -2160,27 +2160,23 @@ impl App {
                 }
             }
 
-            // Delete local tasks missing from Notion (Notion is source of truth)
-            let mut deleted = 0;
-            let mut deleted_titles: Vec<String> = Vec::new();
+            // Warn about local tasks missing from Notion (do NOT auto-delete)
+            let mut orphan_titles: Vec<String> = Vec::new();
             for (id, local) in &local_map {
                 if !remote_ids.contains(id) {
-                    match store.delete(id) {
-                        Ok(()) => {
-                            deleted += 1;
-                            deleted_titles.push(local.title.clone());
-                        }
-                        Err(e) => errors.push(format!("delete {id}: {e}")),
-                    }
+                    orphan_titles.push(local.title.clone());
                 }
             }
 
             let mut msg = format!(
-                "Pull complete: {created} created, {updated} updated, {unchanged} unchanged, {deleted} deleted"
+                "Pull complete: {created} created, {updated} updated, {unchanged} unchanged"
             );
-            if !deleted_titles.is_empty() {
-                msg.push_str("\n\nDeleted locally (removed from Notion):");
-                for title in &deleted_titles {
+            if !orphan_titles.is_empty() {
+                msg.push_str(&format!(
+                    "\n\n{} local task(s) not found in Notion (kept locally):",
+                    orphan_titles.len()
+                ));
+                for title in &orphan_titles {
                     msg.push_str(&format!("\n  - {title}"));
                 }
             }

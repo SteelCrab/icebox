@@ -21,3 +21,5 @@ reqwest = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
+flate2 = { workspace = true }
+tar = { workspace = true }

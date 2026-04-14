@@ -23,6 +23,7 @@ fn main() -> Result<()> {
         Some("logout") => return run_logout(),
         Some("whoami") => return run_whoami(),
         Some("test-api") => return run_test_api(),
+        Some("upgrade") => return run_upgrade(),
         Some("init") => return run_init(&args),
         Some("help") | Some("--help") | Some("-h") => {
             print_help();
@@ -55,6 +56,7 @@ fn print_help() {
     println!("  icebox login          Authenticate via OAuth (opens browser)");
     println!("  icebox logout         Clear saved credentials");
     println!("  icebox whoami         Show current authentication status");
+    println!("  icebox upgrade        Check for updates and upgrade to latest version");
     println!("  icebox help           Show this help message");
     println!();
     println!("AUTHENTICATION (recommended: API key):");
@@ -704,6 +706,177 @@ fn mask_secret(secret: &str) -> String {
         .rev()
         .collect();
     format!("{prefix}...{suffix}")
+}
+
+// ── Upgrade ──
+
+const GITHUB_REPO: &str = "SteelCrab/icebox";
+
+fn current_target() -> Option<&'static str> {
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    { return Some("aarch64-apple-darwin"); }
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    { return Some("x86_64-apple-darwin"); }
+    #[cfg(all(target_os = "linux", target_arch = "x86_64", not(target_env = "musl")))]
+    { return Some("x86_64-unknown-linux-gnu"); }
+    #[cfg(all(target_os = "linux", target_arch = "aarch64", not(target_env = "musl")))]
+    { return Some("aarch64-unknown-linux-gnu"); }
+    #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "musl"))]
+    { return Some("x86_64-unknown-linux-musl"); }
+    #[cfg(all(target_os = "linux", target_arch = "aarch64", target_env = "musl"))]
+    { return Some("aarch64-unknown-linux-musl"); }
+    #[cfg(all(target_os = "linux", target_arch = "arm"))]
+    { return Some("armv7-unknown-linux-gnueabihf"); }
+    #[allow(unreachable_code)]
+    None
+}
+
+fn is_newer(latest: &str, current: &str) -> bool {
+    let parse = |v: &str| -> Vec<u32> {
+        v.split('.').filter_map(|p| p.parse().ok()).collect()
+    };
+    parse(latest) > parse(current)
+}
+
+fn run_upgrade() -> Result<()> {
+    let current = env!("CARGO_PKG_VERSION");
+    let target = current_target().context(
+        "unsupported platform for auto-upgrade. Download manually from: \
+         https://github.com/SteelCrab/icebox/releases",
+    )?;
+
+    println!("Icebox Upgrade");
+    println!("\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}");
+    println!("  Current: v{current}");
+    println!("  Target:  {target}");
+    println!();
+
+    // Homebrew detection: warn and exit
+    let exe_path = env::current_exe().context("failed to detect current executable path")?;
+    let exe_str = exe_path.display().to_string();
+    if exe_str.contains("/Cellar/") || exe_str.contains("/homebrew/") {
+        println!("  Homebrew installation detected.");
+        println!("  Use: brew upgrade icebox");
+        return Ok(());
+    }
+
+    // Fetch latest release from GitHub API
+    println!("  Checking for updates...");
+    let client = reqwest::blocking::Client::builder()
+        .user_agent(format!("icebox/{current}"))
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .context("failed to create HTTP client")?;
+
+    let response = client
+        .get(format!(
+            "https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+        ))
+        .send()
+        .context("failed to connect to GitHub. Check your network.")?;
+
+    if !response.status().is_success() {
+        anyhow::bail!(
+            "GitHub API returned {}. Check your network or try again later.",
+            response.status()
+        );
+    }
+
+    let release: serde_json::Value = response
+        .json()
+        .context("failed to parse GitHub release response")?;
+    let tag = release["tag_name"]
+        .as_str()
+        .context("no tag_name in release response")?;
+    let latest = tag.strip_prefix('v').unwrap_or(tag);
+
+    if !is_newer(latest, current) {
+        println!("  Already up to date (v{current}).");
+        return Ok(());
+    }
+
+    println!("  Latest:  v{latest}");
+    println!();
+
+    // Download binary archive
+    let asset = format!("icebox-{target}.tar.gz");
+    let url = format!("https://github.com/{GITHUB_REPO}/releases/download/{tag}/{asset}");
+    println!("  Downloading {asset}...");
+
+    let dl_response = client
+        .get(&url)
+        .send()
+        .with_context(|| format!("failed to download {url}"))?;
+
+    if dl_response.status().is_client_error() {
+        anyhow::bail!("No release binary found for {target}. Asset: {asset}");
+    }
+    if !dl_response.status().is_success() {
+        anyhow::bail!("Download failed with status {}", dl_response.status());
+    }
+
+    let bytes = dl_response
+        .bytes()
+        .context("failed to read download response")?;
+    let size_mb = bytes.len() as f64 / 1_048_576.0;
+    println!("  Downloaded {size_mb:.1} MB");
+
+    // Extract binary from tar.gz
+    println!("  Extracting...");
+    let tmp_dir = tempdir().context("failed to create temp directory")?;
+    let decoder = flate2::read::GzDecoder::new(&bytes[..]);
+    let mut archive = tar::Archive::new(decoder);
+    archive
+        .unpack(&tmp_dir)
+        .context("failed to extract archive")?;
+
+    let new_binary = tmp_dir.join("icebox");
+    if !new_binary.exists() {
+        anyhow::bail!("archive did not contain an 'icebox' binary");
+    }
+
+    // Replace current binary
+    println!("  Installing...");
+
+    // Set executable permission
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o755);
+        std::fs::set_permissions(&new_binary, perms)
+            .context("failed to set executable permission")?;
+    }
+
+    // Atomic replace: try rename first, fall back to copy
+    let backup = exe_path.with_extension("old");
+    if fs::rename(&exe_path, &backup).is_ok() {
+        if let Err(e) = fs::rename(&new_binary, &exe_path) {
+            // Restore backup on failure
+            let _ = fs::rename(&backup, &exe_path);
+            return Err(e).context("failed to install new binary");
+        }
+        let _ = fs::remove_file(&backup);
+    } else {
+        // rename failed (cross-device): copy instead
+        fs::copy(&new_binary, &exe_path).context(
+            "failed to replace binary. Permission denied? Try: sudo icebox upgrade",
+        )?;
+    }
+
+    // Cleanup
+    let _ = fs::remove_dir_all(&tmp_dir);
+
+    println!();
+    println!("  \u{2713} Upgraded to v{latest}!");
+    println!("  Restart icebox to use the new version.");
+    Ok(())
+}
+
+fn tempdir() -> Result<PathBuf> {
+    let dir = env::temp_dir().join(format!("icebox-upgrade-{}", std::process::id()));
+    fs::create_dir_all(&dir)
+        .with_context(|| format!("failed to create temp dir: {}", dir.display()))?;
+    Ok(dir)
 }
 
 fn restore_terminal() -> Result<()> {

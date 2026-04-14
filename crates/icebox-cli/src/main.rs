@@ -487,9 +487,6 @@ fn setup_mcp_config(workspace: &std::path::Path) -> Result<()> {
         report(".mcp.json", false);
         return Ok(());
     }
-    if !prompt_yes_no("Create .mcp.json?", true)? {
-        return Ok(());
-    }
 
     let content = r#"{
   "mcpServers": {
@@ -500,6 +497,25 @@ fn setup_mcp_config(workspace: &std::path::Path) -> Result<()> {
   }
 }
 "#;
+
+    // Preview what will be written and why, so the user can decide informed.
+    println!();
+    println!("  About .mcp.json:");
+    println!("    An MCP (Model Context Protocol) config that lets Claude Code talk to");
+    println!("    this project's icebox board. With it, Claude Code can list / create /");
+    println!("    move tasks directly via `mcp__icebox__*` tools.");
+    println!();
+    println!("    file:  {}", path.display());
+    println!();
+    for line in content.lines() {
+        println!("    │ {line}");
+    }
+    println!();
+
+    if !prompt_yes_no("Create .mcp.json?", true)? {
+        return Ok(());
+    }
+
     fs::write(&path, content)?;
     report(".mcp.json", true);
     Ok(())
@@ -534,11 +550,6 @@ fn setup_claude_memory(workspace: &std::path::Path) -> Result<()> {
         report(label, false);
         return Ok(());
     }
-    if !prompt_yes_no("Add icebox workflow to Claude Code memory?", true)? {
-        return Ok(());
-    }
-
-    fs::create_dir_all(&memory_dir)?;
 
     let memory_content = r#"---
 name: Icebox kanban workflow — primary task tracker
@@ -562,6 +573,27 @@ This project uses [icebox](https://github.com/SteelCrab/icebox) as its **primary
 
 **How to apply:** When the user requests any work (feature, bug, refactor, investigation), do not start coding until a task exists and is in `inprogress`. Prefer MCP tools over direct file edits in `.icebox/tasks/`. If asked "what should I work on?", check the board — don't ask.
 "#;
+
+    // Preview what will be added and why, so the user can decide informed.
+    println!();
+    println!("  About Claude Code memory entry:");
+    println!("    A project-scoped memory file that teaches Claude Code to treat icebox");
+    println!("    as the primary task tracker for this project — check the board, create");
+    println!("    a task, update progress, and never skip it. Loaded automatically by");
+    println!("    Claude Code when you work in this directory.");
+    println!();
+    println!("    file:  {}", memory_file.display());
+    println!();
+    for line in memory_content.lines() {
+        println!("    │ {line}");
+    }
+    println!();
+
+    if !prompt_yes_no("Add icebox workflow to Claude Code memory?", true)? {
+        return Ok(());
+    }
+
+    fs::create_dir_all(&memory_dir)?;
 
     fs::write(&memory_file, memory_content)?;
 

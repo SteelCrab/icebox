@@ -52,6 +52,7 @@ fn print_help() {
     println!("  icebox [path]         Launch the TUI kanban board at the given path");
     println!("  icebox init           Initialize .icebox/ workspace (current directory)");
     println!("  icebox init [path]    Initialize .icebox/ workspace at the given path");
+    println!("  icebox init --all     Also set up .mcp.json and CLAUDE.md (prompts for each)");
     println!("  icebox login          Authenticate via OAuth (opens browser)");
     println!("  icebox logout         Clear saved credentials");
     println!("  icebox whoami         Show current authentication status");
@@ -404,7 +405,11 @@ fn run_test_api() -> Result<()> {
 // ── Init ──
 
 fn run_init(args: &[String]) -> Result<()> {
-    let workspace = match args.get(2) {
+    // Check for --all flag (can appear in any position after "init")
+    let all_flag = args.iter().skip(2).any(|a| a == "--all");
+    let path_arg = args.iter().skip(2).find(|a| !a.starts_with("--"));
+
+    let workspace = match path_arg {
         Some(path) => {
             let p = PathBuf::from(path);
             if p.is_absolute() {
@@ -432,6 +437,108 @@ fn run_init(args: &[String]) -> Result<()> {
         println!("Icebox workspace already exists at {}", icebox_dir.display());
     }
 
+    if all_flag {
+        println!();
+        setup_mcp_config(&workspace)?;
+        println!();
+        setup_claude_memory(&workspace)?;
+    }
+
+    Ok(())
+}
+
+fn prompt_yes_no(question: &str, default_yes: bool) -> Result<bool> {
+    use std::io::Write;
+    let hint = if default_yes { "[Y/n]" } else { "[y/N]" };
+    print!("{question} {hint}: ");
+    io::stdout().flush().ok();
+
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .context("failed to read stdin")?;
+    let answer = input.trim().to_lowercase();
+    Ok(match answer.as_str() {
+        "y" | "yes" => true,
+        "n" | "no" => false,
+        "" => default_yes,
+        _ => default_yes,
+    })
+}
+
+fn setup_mcp_config(workspace: &std::path::Path) -> Result<()> {
+    let mcp_path = workspace.join(".mcp.json");
+
+    if mcp_path.exists() {
+        println!("MCP config: .mcp.json already exists, skipping");
+        return Ok(());
+    }
+
+    if !prompt_yes_no("Create .mcp.json for Claude Code MCP integration?", true)? {
+        println!("MCP config: skipped");
+        return Ok(());
+    }
+
+    let content = r#"{
+  "mcpServers": {
+    "icebox": {
+      "command": "icebox",
+      "args": ["mcp"]
+    }
+  }
+}
+"#;
+    fs::write(&mcp_path, content)
+        .with_context(|| format!("failed to write {}", mcp_path.display()))?;
+    println!("MCP config: created .mcp.json");
+    Ok(())
+}
+
+fn setup_claude_memory(workspace: &std::path::Path) -> Result<()> {
+    let claude_md = workspace.join("CLAUDE.md");
+
+    let memory_block = r#"## Icebox Kanban Board
+
+This project uses [icebox](https://github.com/SteelCrab/icebox) for task management.
+
+- **Task files**: `.icebox/tasks/*.md` (YAML frontmatter + markdown body)
+- **MCP tools**: Use `mcp__icebox__*` tools (e.g., `list_tasks`, `create_task`, `update_task`, `move_task`) to manage the board
+- **Columns**: icebox, emergency, inprogress, testing, complete
+- **Priorities**: low, medium, high, critical
+- When the user mentions tasks, todos, or work items, prefer MCP tools over manual file edits
+"#;
+
+    if claude_md.exists() {
+        let existing = fs::read_to_string(&claude_md)
+            .with_context(|| format!("failed to read {}", claude_md.display()))?;
+        if existing.contains("## Icebox Kanban Board") {
+            println!("Claude memory: already configured in CLAUDE.md, skipping");
+            return Ok(());
+        }
+
+        if !prompt_yes_no("Append icebox usage guide to existing CLAUDE.md?", true)? {
+            println!("Claude memory: skipped");
+            return Ok(());
+        }
+
+        let appended = if existing.ends_with('\n') {
+            format!("{existing}\n{memory_block}")
+        } else {
+            format!("{existing}\n\n{memory_block}")
+        };
+        fs::write(&claude_md, appended)
+            .with_context(|| format!("failed to write {}", claude_md.display()))?;
+        println!("Claude memory: appended to CLAUDE.md");
+    } else {
+        if !prompt_yes_no("Create CLAUDE.md with icebox usage guide?", true)? {
+            println!("Claude memory: skipped");
+            return Ok(());
+        }
+
+        fs::write(&claude_md, memory_block)
+            .with_context(|| format!("failed to write {}", claude_md.display()))?;
+        println!("Claude memory: created CLAUDE.md");
+    }
     Ok(())
 }
 

@@ -35,11 +35,10 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          VERSION="${TAG#v}"
-          # Extract the section for this version (between ## vX.Y.Z headings)
-          NOTES=$(awk "/^## ${VERSION//./\\.}\$/{found=1; next} /^## v[0-9]/{if(found) exit} found" CHANGELOG.md)
+          # Extract the section for this tag (between ## vX.Y.Z headings)
+          NOTES=$(awk "/^## ${TAG//./\\.}\$/{found=1; next} /^## v[0-9]/{if(found) exit} found" CHANGELOG.md)
           if [ -z "$NOTES" ]; then
-            echo "No CHANGELOG entry for $VERSION, using auto-generated notes."
+            echo "No CHANGELOG entry for $TAG, using auto-generated notes."
             echo "use_changelog=false" >> "$GITHUB_OUTPUT"
           else
             # Write to file to preserve formatting

@@ -497,15 +497,45 @@ fn setup_mcp_config(workspace: &std::path::Path) -> Result<()> {
 fn setup_claude_memory(workspace: &std::path::Path) -> Result<()> {
     let claude_md = workspace.join("CLAUDE.md");
 
-    let memory_block = r#"## Icebox Kanban Board
+    let memory_block = r#"## Icebox Kanban Board — Primary Task Management
 
-This project uses [icebox](https://github.com/SteelCrab/icebox) for task management.
+This project uses [icebox](https://github.com/SteelCrab/icebox) as its **primary task tracking system**.
+All task-related work MUST flow through the icebox kanban board via MCP tools.
 
+### Core Workflow
+
+When the user requests any work (feature, bug fix, refactor, investigation, etc.):
+
+1. **Check the board first** — call `mcp__icebox__list_tasks` to see existing tasks
+2. **Create a task** — call `mcp__icebox__create_task` for new work items before starting
+3. **Move to `inprogress`** — call `mcp__icebox__move_task` when starting work
+4. **Update as you progress** — use `mcp__icebox__update_task` to adjust priority, tags, body, dates
+5. **Move to `testing`** when code is written, `complete` when verified
+6. **Never skip the board** — even small changes should have a task for visibility
+
+Prefer MCP tools (`mcp__icebox__*`) over direct file edits in `.icebox/tasks/`.
+
+### Board Structure
+
+- **Columns**: `icebox` (backlog) → `emergency` (urgent) → `inprogress` → `testing` → `complete`
+- **Priorities**: `low`, `medium`, `high`, `critical`
+- **Swimlanes**: optional grouping (e.g., `backend`, `frontend`, `q1-2026`)
 - **Task files**: `.icebox/tasks/*.md` (YAML frontmatter + markdown body)
-- **MCP tools**: Use `mcp__icebox__*` tools (e.g., `list_tasks`, `create_task`, `update_task`, `move_task`) to manage the board
-- **Columns**: icebox, emergency, inprogress, testing, complete
-- **Priorities**: low, medium, high, critical
-- When the user mentions tasks, todos, or work items, prefer MCP tools over manual file edits
+
+### Available MCP Tools
+
+- `list_tasks`, `create_task`, `update_task`, `move_task` — board management
+- `bash`, `read_file`, `write_file`, `glob_search`, `grep_search` — code operations
+- `save_memory`, `list_memories`, `delete_memory` — persistent context across sessions
+
+### Behavior Guidelines
+
+- **Delegate flow control to icebox** — let the board drive task ordering and prioritization
+- **Task body is the source of truth** — put progress notes, decisions, references (commits, PRs) in the markdown body
+- **Update task status in real-time** — don't batch updates at the end
+- **Use memory tools** for cross-task context that doesn't fit in any single task
+
+If the user asks "what should I work on next?", always check the board first rather than asking.
 "#;
 
     if claude_md.exists() {

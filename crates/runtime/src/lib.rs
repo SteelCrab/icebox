@@ -4,7 +4,7 @@ pub mod oauth;
 pub mod session;
 pub mod usage;
 
-pub use config::IceboxConfig;
+pub use config::{IceboxConfig, NotionConfig};
 pub use conversation::{
     AiEvent, ConversationRuntime, RuntimeCommand, ToolApproval, ToolExecutor,
 };
@@ -17,7 +17,7 @@ pub use oauth::{
     token_exchange_params, wait_for_oauth_callback,
 };
 pub use session::{
-    ContentBlock, ConversationMessage, MessageRole, Session, GLOBAL_SESSION_KEY, session_path,
+    ContentBlock, ConversationMessage, GLOBAL_SESSION_KEY, MessageRole, Session, session_path,
 };
 pub use usage::{
     DEFAULT_MODEL, DEFAULT_OAUTH_MODEL, Effort, MODELS, ModelInfo, TokenUsage, UsageTracker,

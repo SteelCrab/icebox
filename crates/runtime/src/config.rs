@@ -6,12 +6,29 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+/// Notion integration settings.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct NotionConfig {
+    /// Notion API key (fallback; env var `NOTION_API_KEY` takes precedence).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
+    /// Notion database ID for syncing tasks.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub database_id: Option<String>,
+    /// Parent page ID where the database was created.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_page_id: Option<String>,
+}
+
 /// User preferences persisted across sessions.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct IceboxConfig {
     /// Last-used model ID (e.g., "claude-opus-4-6").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Notion integration settings.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notion: Option<NotionConfig>,
 }
 
 impl IceboxConfig {
@@ -75,5 +92,21 @@ impl IceboxConfig {
     /// Get the saved model, if any.
     pub fn saved_model() -> Option<String> {
         Self::load().model
+    }
+
+    /// Save Notion integration config (database_id, parent_page_id).
+    pub fn save_notion(database_id: &str, parent_page_id: &str) -> Result<()> {
+        let mut config = Self::load();
+        config.notion = Some(NotionConfig {
+            api_key: config.notion.as_ref().and_then(|n| n.api_key.clone()),
+            database_id: Some(database_id.to_string()),
+            parent_page_id: Some(parent_page_id.to_string()),
+        });
+        config.save()
+    }
+
+    /// Get the saved Notion config, if any.
+    pub fn notion_config() -> Option<NotionConfig> {
+        Self::load().notion
     }
 }

@@ -1,3 +1,5 @@
+pub mod notion;
+
 use anyhow::{Context, Result};
 use icebox_api::ToolDefinition;
 use icebox_task::model::{Column, Priority, Task};
@@ -40,12 +42,16 @@ impl icebox_runtime::ToolExecutor for IceboxToolExecutor {
             "glob_search" => execute_glob_search(input, &self.workspace),
             "grep_search" => execute_grep_search(input, &self.workspace),
             "list_tasks" => execute_list_tasks(&self.store),
+            "list_swimlanes" => execute_list_swimlanes(&self.store),
+            "filter_tasks" => execute_filter_tasks(input, &self.store),
             "create_task" => execute_create_task(input, &self.store),
             "update_task" => execute_update_task(input, &self.store),
             "move_task" => execute_move_task(input, &self.store),
+            "notion_sync" => execute_notion_sync(input, &self.store),
             "save_memory" => execute_save_memory(input, &self.memory_store),
             "list_memories" => execute_list_memories(&self.memory_store),
             "delete_memory" => execute_delete_memory(input, &self.memory_store),
+            "notion_sync" => execute_notion_sync(input, &self.store),
             _ => Ok(format!("Unknown tool: {tool_name}")),
         }
     }
@@ -120,6 +126,27 @@ impl icebox_runtime::ToolExecutor for IceboxToolExecutor {
                 }),
             },
             ToolDefinition {
+                name: "list_swimlanes".to_string(),
+                description: Some("Icebox built-in tool. List all swimlanes with task counts per column.".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {}
+                }),
+            },
+            ToolDefinition {
+                name: "filter_tasks".to_string(),
+                description: Some("Icebox built-in tool. Filter tasks by swimlane, column, priority, or title keyword.".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "swimlane": { "type": "string", "description": "Filter by swimlane name" },
+                        "column": { "type": "string", "description": "Filter by column", "enum": ["icebox", "emergency", "inprogress", "testing", "complete"] },
+                        "priority": { "type": "string", "description": "Filter by priority", "enum": ["low", "medium", "high", "critical"] },
+                        "query": { "type": "string", "description": "Search title keyword" }
+                    }
+                }),
+            },
+            ToolDefinition {
                 name: "create_task".to_string(),
                 description: Some("Icebox built-in tool. Create a new task on the kanban board.".to_string()),
                 input_schema: json!({
@@ -166,6 +193,18 @@ impl icebox_runtime::ToolExecutor for IceboxToolExecutor {
                 }),
             },
             ToolDefinition {
+                name: "notion_sync".to_string(),
+                description: Some("Icebox built-in tool. Sync kanban tasks to a Notion database. Actions: push (sync tasks), status (show config).".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "action": { "type": "string", "description": "Action to perform", "enum": ["push", "status"] },
+                        "page_name": { "type": "string", "description": "Parent page name for initial setup (only needed once)" }
+                    },
+                    "required": ["action"]
+                }),
+            },
+            ToolDefinition {
                 name: "save_memory".to_string(),
                 description: Some("Icebox built-in tool. Save important information to persistent memory for future AI context across sessions.".to_string()),
                 input_schema: json!({
@@ -194,6 +233,18 @@ impl icebox_runtime::ToolExecutor for IceboxToolExecutor {
                         "memory_id": { "type": "string", "description": "Memory ID to delete" }
                     },
                     "required": ["memory_id"]
+                }),
+            },
+            ToolDefinition {
+                name: "notion_sync".to_string(),
+                description: Some("Icebox built-in tool. Sync kanban tasks to a Notion database. Actions: push (sync tasks), status (show config).".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "action": { "type": "string", "description": "Action to perform", "enum": ["push", "status"] },
+                        "page_name": { "type": "string", "description": "Parent page name for initial setup (only needed once)" }
+                    },
+                    "required": ["action"]
                 }),
             },
         ]
@@ -568,6 +619,124 @@ fn find_task_by_prefix(store: &TaskStore, prefix: &str) -> Result<String> {
     }
 }
 
+fn execute_list_swimlanes(store: &Arc<Mutex<TaskStore>>) -> Result<String> {
+    let store = store
+        .lock()
+        .map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
+    let tasks = store.list()?;
+
+    let mut lanes: std::collections::BTreeMap<String, Vec<&Task>> = std::collections::BTreeMap::new();
+    let mut no_lane = Vec::new();
+
+    for task in &tasks {
+        match &task.swimlane {
+            Some(lane) => lanes.entry(lane.clone()).or_default().push(task),
+            None => no_lane.push(task),
+        }
+    }
+
+    let mut output = String::from("Swimlanes:\n");
+
+    for (name, lane_tasks) in &lanes {
+        output.push_str(&format!("\n@{name} ({} tasks)\n", lane_tasks.len()));
+        for col in Column::ALL {
+            let count = lane_tasks.iter().filter(|t| t.column == col).count();
+            if count > 0 {
+                output.push_str(&format!("  {}: {count}\n", col.display_name()));
+            }
+        }
+    }
+
+    if !no_lane.is_empty() {
+        output.push_str(&format!("\n(no swimlane) ({} tasks)\n", no_lane.len()));
+        for col in Column::ALL {
+            let count = no_lane.iter().filter(|t| t.column == col).count();
+            if count > 0 {
+                output.push_str(&format!("  {}: {count}\n", col.display_name()));
+            }
+        }
+    }
+
+    Ok(output)
+}
+
+#[derive(Deserialize)]
+struct FilterTasksInput {
+    swimlane: Option<String>,
+    column: Option<String>,
+    priority: Option<String>,
+    query: Option<String>,
+}
+
+fn execute_filter_tasks(input: &str, store: &Arc<Mutex<TaskStore>>) -> Result<String> {
+    let parsed: FilterTasksInput =
+        serde_json::from_str(input).context("invalid filter_tasks input")?;
+
+    let store = store
+        .lock()
+        .map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
+    let all_tasks = store.list()?;
+
+    let mut filtered: Vec<&Task> = all_tasks.iter().collect();
+
+    if let Some(lane) = &parsed.swimlane {
+        filtered.retain(|t| t.swimlane.as_deref() == Some(lane.as_str()));
+    }
+
+    if let Some(col) = &parsed.column {
+        let column = match col.as_str() {
+            "icebox" => Some(Column::Icebox),
+            "emergency" => Some(Column::Emergency),
+            "inprogress" => Some(Column::InProgress),
+            "testing" => Some(Column::Testing),
+            "complete" => Some(Column::Complete),
+            _ => None,
+        };
+        if let Some(c) = column {
+            filtered.retain(|t| t.column == c);
+        }
+    }
+
+    if let Some(pri) = &parsed.priority {
+        let priority = match pri.as_str() {
+            "low" => Some(Priority::Low),
+            "medium" => Some(Priority::Medium),
+            "high" => Some(Priority::High),
+            "critical" => Some(Priority::Critical),
+            _ => None,
+        };
+        if let Some(p) = priority {
+            filtered.retain(|t| t.priority == p);
+        }
+    }
+
+    if let Some(q) = &parsed.query {
+        let q_lower = q.to_lowercase();
+        filtered.retain(|t| t.title.to_lowercase().contains(&q_lower));
+    }
+
+    if filtered.is_empty() {
+        return Ok("No tasks match the filter.".to_string());
+    }
+
+    let mut output = format!("Found {} task(s):\n", filtered.len());
+    for task in &filtered {
+        let lane = task
+            .swimlane
+            .as_ref()
+            .map_or(String::new(), |s| format!(" @{s}"));
+        output.push_str(&format!(
+            "- [{}] {} ({}, {}){}\n",
+            task.id,
+            task.title,
+            task.column.display_name(),
+            task.priority.label(),
+            lane,
+        ));
+    }
+    Ok(output)
+}
+
 fn execute_move_task(input: &str, store: &Arc<Mutex<TaskStore>>) -> Result<String> {
     let parsed: MoveTaskInput = serde_json::from_str(input).context("invalid move_task input")?;
 
@@ -604,10 +773,7 @@ struct SaveMemoryInput {
     source: Option<String>,
 }
 
-fn execute_save_memory(
-    input: &str,
-    store: &icebox_task::memory::MemoryStore,
-) -> Result<String> {
+fn execute_save_memory(input: &str, store: &icebox_task::memory::MemoryStore) -> Result<String> {
     let parsed: SaveMemoryInput =
         serde_json::from_str(input).context("invalid save_memory input")?;
     let source = parsed.source.unwrap_or_else(|| "global".into());
@@ -638,16 +804,65 @@ struct DeleteMemoryInput {
     memory_id: String,
 }
 
-fn execute_delete_memory(
-    input: &str,
-    store: &icebox_task::memory::MemoryStore,
-) -> Result<String> {
+fn execute_delete_memory(input: &str, store: &icebox_task::memory::MemoryStore) -> Result<String> {
     let parsed: DeleteMemoryInput =
         serde_json::from_str(input).context("invalid delete_memory input")?;
     if store.delete(&parsed.memory_id)? {
         Ok(format!("Memory {} deleted.", parsed.memory_id))
     } else {
         Ok(format!("Memory {} not found.", parsed.memory_id))
+    }
+}
+
+fn execute_notion_sync(input: &str, store: &Arc<Mutex<TaskStore>>) -> Result<String> {
+    let parsed: notion::NotionSyncInput =
+        serde_json::from_str(input).context("invalid notion_sync input")?;
+
+    let config = icebox_runtime::IceboxConfig::load();
+    let config_api_key = config.notion.as_ref().and_then(|n| n.api_key.as_deref());
+
+    let client = match notion::NotionClient::from_env(config_api_key) {
+        Ok(c) => c,
+        Err(e) => return Ok(format!("Notion 연결 실패: {e}")),
+    };
+
+    match parsed.action.as_str() {
+        "push" => {
+            let database_id = match config
+                .notion
+                .as_ref()
+                .and_then(|n| n.database_id.as_deref())
+            {
+                Some(id) => id.to_string(),
+                None => {
+                    return Ok("Notion 데이터베이스가 설정되지 않았습니다.\n\
+                         /notion push <parent-page-name> 으로 먼저 설정해주세요."
+                        .to_string());
+                }
+            };
+
+            let store = store
+                .lock()
+                .map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
+            let tasks = store.list()?;
+            drop(store);
+
+            match client.sync_tasks(&database_id, &tasks) {
+                Ok(result) => Ok(result.to_string()),
+                Err(e) => Ok(format!("Notion 동기화 실패: {e}")),
+            }
+        }
+        "status" => match config.notion {
+            Some(ref n) if n.database_id.is_some() => Ok(format!(
+                "Notion 연결 상태:\n  Database ID: {}\n  Parent Page: {}",
+                n.database_id.as_deref().unwrap_or("-"),
+                n.parent_page_id.as_deref().unwrap_or("-"),
+            )),
+            _ => Ok("Notion이 아직 설정되지 않았습니다.".to_string()),
+        },
+        other => Ok(format!(
+            "Unknown notion action: {other}. Use 'push' or 'status'."
+        )),
     }
 }
 

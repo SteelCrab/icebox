@@ -25,13 +25,9 @@ pub enum RuntimeCommand {
     /// Switch the active model
     SwitchModel(String),
     /// Clear a session (runtime cache + disk)
-    ClearSession {
-        session_id: Option<String>,
-    },
+    ClearSession { session_id: Option<String> },
     /// Compact a session (summarize old messages, keep recent)
-    CompactSession {
-        session_id: Option<String>,
-    },
+    CompactSession { session_id: Option<String> },
 }
 
 /// User's response to a tool approval request

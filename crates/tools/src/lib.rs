@@ -51,7 +51,6 @@ impl icebox_runtime::ToolExecutor for IceboxToolExecutor {
             "save_memory" => execute_save_memory(input, &self.memory_store),
             "list_memories" => execute_list_memories(&self.memory_store),
             "delete_memory" => execute_delete_memory(input, &self.memory_store),
-            "notion_sync" => execute_notion_sync(input, &self.store),
             _ => Ok(format!("Unknown tool: {tool_name}")),
         }
     }

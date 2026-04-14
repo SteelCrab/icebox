@@ -72,28 +72,26 @@ CLI ergonomics: one-shot workspace setup, integrated web launcher, self-update, 
 brew tap SteelCrab/tap && brew install icebox
 ```
 
-**Windows**
-Download the latest `.zip` from the [release assets](https://github.com/SteelCrab/icebox/releases/tag/v0.4.0).
-
 **Linux**
 ```bash
-# x86_64
 curl -LO https://github.com/SteelCrab/icebox/releases/download/v0.4.0/icebox-x86_64-unknown-linux-gnu.tar.gz
 tar xzf icebox-x86_64-unknown-linux-gnu.tar.gz && mv icebox ~/.local/bin/
-
-# aarch64
-curl -LO https://github.com/SteelCrab/icebox/releases/download/v0.4.0/icebox-aarch64-unknown-linux-gnu.tar.gz
-tar xzf icebox-aarch64-unknown-linux-gnu.tar.gz && mv icebox ~/.local/bin/
 ```
 
 ### ⬆️ Upgrade
 
 ```bash
-icebox upgrade         # self-update (any platform)
-brew upgrade icebox    # macOS Homebrew
+brew upgrade icebox
 ```
 
-**Full Changelog**: https://github.com/SteelCrab/icebox/compare/v0.3.0...v0.4.0
+### Quick Start
+
+```bash
+cd your-project
+icebox init --all      # ★ recommended — workspace + MCP + memory
+```
+
+**Full Changelog**: https://github.com/SteelCrab/icebox/compare/v0.3.1...v0.4.0
 
 ## v0.3.0
 

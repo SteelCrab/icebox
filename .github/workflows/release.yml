@@ -35,11 +35,10 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          VERSION="${TAG#v}"
-          # Extract the section for this version (between ## vX.Y.Z headings)
-          NOTES=$(awk "/^## ${VERSION//./\\.}\$/{found=1; next} /^## v[0-9]/{if(found) exit} found" CHANGELOG.md)
+          # Extract the section for this tag (between ## vX.Y.Z headings)
+          NOTES=$(awk "/^## ${TAG//./\\.}\$/{found=1; next} /^## v[0-9]/{if(found) exit} found" CHANGELOG.md)
           if [ -z "$NOTES" ]; then
-            echo "No CHANGELOG entry for $VERSION, using auto-generated notes."
+            echo "No CHANGELOG entry for $TAG, using auto-generated notes."
             echo "use_changelog=false" >> "$GITHUB_OUTPUT"
           else
             # Write to file to preserve formatting
@@ -47,25 +46,38 @@ jobs:
             echo "use_changelog=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Create release if missing
+      - name: Create or update release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
           USE_CHANGELOG: ${{ steps.notes.outputs.use_changelog }}
         run: |
+          EXISTS=false
           if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
-            echo "Release $TAG already exists; skipping create."
-          elif [ "$USE_CHANGELOG" = "true" ]; then
-            gh release create "$TAG" \
-              -R "$REPO" \
-              --title "$TAG" \
-              --notes-file /tmp/release-notes.md
-          else
+            EXISTS=true
+          fi
+
+          if [ "$USE_CHANGELOG" = "true" ]; then
+            if [ "$EXISTS" = "true" ]; then
+              echo "Updating existing release $TAG with CHANGELOG notes."
+              gh release edit "$TAG" \
+                -R "$REPO" \
+                --title "$TAG" \
+                --notes-file /tmp/release-notes.md
+            else
+              gh release create "$TAG" \
+                -R "$REPO" \
+                --title "$TAG" \
+                --notes-file /tmp/release-notes.md
+            fi
+          elif [ "$EXISTS" = "false" ]; then
             gh release create "$TAG" \
               -R "$REPO" \
               --title "$TAG" \
               --generate-notes
+          else
+            echo "Release $TAG exists and no CHANGELOG entry found; leaving as is."
           fi
 
   build:

@@ -2,6 +2,99 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.5.0
+
+Full Windows architecture support across runtime, tooling, and release pipeline.
+
+### ✨ Features
+- **Windows builds** in the release pipeline:
+  - `x86_64-pc-windows-msvc`
+  - `aarch64-pc-windows-msvc`
+- Windows artifacts distributed as `.zip` archives
+- Cross-platform home directory resolution (`HOME` on Unix, `USERPROFILE` on Windows)
+- Shell execution via `cmd /C` on Windows, `sh -c` elsewhere
+
+### 🔧 Improvements
+- File permission handling guarded by `#[cfg(unix)]` (no-op on Windows)
+- Release workflow runs on `windows-latest` for native Windows builds
+
+### 📦 Install
+
+**macOS (Homebrew)**
+```bash
+brew tap SteelCrab/tap && brew install icebox
+```
+
+**Windows**
+Download `icebox-x86_64-pc-windows-msvc.zip` or `icebox-aarch64-pc-windows-msvc.zip` from the [release assets](https://github.com/SteelCrab/icebox/releases/tag/v0.5.0), extract, and add to PATH.
+
+**Linux**
+```bash
+# x86_64
+curl -LO https://github.com/SteelCrab/icebox/releases/download/v0.5.0/icebox-x86_64-unknown-linux-gnu.tar.gz
+tar xzf icebox-x86_64-unknown-linux-gnu.tar.gz && mv icebox ~/.local/bin/
+
+# aarch64
+curl -LO https://github.com/SteelCrab/icebox/releases/download/v0.5.0/icebox-aarch64-unknown-linux-gnu.tar.gz
+tar xzf icebox-aarch64-unknown-linux-gnu.tar.gz && mv icebox ~/.local/bin/
+```
+
+### ⬆️ Upgrade
+
+```bash
+icebox upgrade         # self-update (any platform)
+brew upgrade icebox    # macOS Homebrew
+```
+
+**Full Changelog**: https://github.com/SteelCrab/icebox/compare/v0.4.0...v0.5.0
+
+## v0.4.0
+
+CLI ergonomics: one-shot workspace setup, integrated web launcher, self-update, Windows support.
+
+### ✨ Features
+- **`icebox init --all`** — one command to set up `.icebox/`, `.mcp.json`, and Claude Code memory (with Y/n prompts, skips if already exists)
+- **`icebox web`** — launch the local web UI directly from the CLI (delegates to `icebox-web`, forwards args and exit code)
+- **`icebox upgrade`** — self-update the binary from the latest GitHub release
+- **Windows support** — `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc` in the release pipeline (ZIP archives)
+
+### 🔧 Improvements
+- Release workflow reads notes from `CHANGELOG.md` per tag (falls back to auto-generated)
+- `actions/checkout` upgraded to v5 (Node.js 24)
+- Cross-platform HOME resolution (HOME → USERPROFILE)
+- Shell execution switches to `cmd /C` on Windows, `sh -c` elsewhere
+- Minimalist init output (`  created  .icebox/`)
+
+### 📦 Install
+
+**macOS (Homebrew)**
+```bash
+brew tap SteelCrab/tap && brew install icebox
+```
+
+**Windows**
+Download the latest `.zip` from the [release assets](https://github.com/SteelCrab/icebox/releases/tag/v0.4.0).
+
+**Linux**
+```bash
+# x86_64
+curl -LO https://github.com/SteelCrab/icebox/releases/download/v0.4.0/icebox-x86_64-unknown-linux-gnu.tar.gz
+tar xzf icebox-x86_64-unknown-linux-gnu.tar.gz && mv icebox ~/.local/bin/
+
+# aarch64
+curl -LO https://github.com/SteelCrab/icebox/releases/download/v0.4.0/icebox-aarch64-unknown-linux-gnu.tar.gz
+tar xzf icebox-aarch64-unknown-linux-gnu.tar.gz && mv icebox ~/.local/bin/
+```
+
+### ⬆️ Upgrade
+
+```bash
+icebox upgrade         # self-update (any platform)
+brew upgrade icebox    # macOS Homebrew
+```
+
+**Full Changelog**: https://github.com/SteelCrab/icebox/compare/v0.3.0...v0.4.0
+
 ## v0.3.0
 
 Web UI, MCP server, Notion sync.

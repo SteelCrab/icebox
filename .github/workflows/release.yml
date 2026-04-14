@@ -27,14 +27,40 @@ jobs:
     name: Create GitHub Release
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout source
+        uses: actions/checkout@v5
+
+      - name: Extract release notes from CHANGELOG.md
+        id: notes
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+          # Extract the section for this version (between ## vX.Y.Z headings)
+          NOTES=$(awk "/^## ${VERSION//./\\.}\$/{found=1; next} /^## v[0-9]/{if(found) exit} found" CHANGELOG.md)
+          if [ -z "$NOTES" ]; then
+            echo "No CHANGELOG entry for $VERSION, using auto-generated notes."
+            echo "use_changelog=false" >> "$GITHUB_OUTPUT"
+          else
+            # Write to file to preserve formatting
+            echo "$NOTES" > /tmp/release-notes.md
+            echo "use_changelog=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create release if missing
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
+          USE_CHANGELOG: ${{ steps.notes.outputs.use_changelog }}
         run: |
           if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
             echo "Release $TAG already exists; skipping create."
+          elif [ "$USE_CHANGELOG" = "true" ]; then
+            gh release create "$TAG" \
+              -R "$REPO" \
+              --title "$TAG" \
+              --notes-file /tmp/release-notes.md
           else
             gh release create "$TAG" \
               -R "$REPO" \

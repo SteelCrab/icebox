@@ -24,6 +24,7 @@ fn main() -> Result<()> {
         Some("whoami") => return run_whoami(),
         Some("test-api") => return run_test_api(),
         Some("init") => return run_init(&args),
+        Some("web") => return run_web(&args),
         Some("help") | Some("--help") | Some("-h") => {
             print_help();
             return Ok(());
@@ -52,6 +53,7 @@ fn print_help() {
     println!("  icebox [path]         Launch the TUI kanban board at the given path");
     println!("  icebox init           Initialize .icebox/ workspace (current directory)");
     println!("  icebox init [path]    Initialize .icebox/ workspace at the given path");
+    println!("  icebox web [args...]  Launch the local web UI (delegates to icebox-web)");
     println!("  icebox login          Authenticate via OAuth (opens browser)");
     println!("  icebox logout         Clear saved credentials");
     println!("  icebox whoami         Show current authentication status");
@@ -398,6 +400,31 @@ fn run_test_api() -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+// ── Web ──
+
+fn run_web(args: &[String]) -> Result<()> {
+    use std::process::Command;
+
+    // Locate icebox-web binary: same dir as current exe, then PATH
+    let bin_name = if cfg!(windows) { "icebox-web.exe" } else { "icebox-web" };
+    let exe_dir = env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf()));
+    let candidate = exe_dir.as_ref().map(|d| d.join(bin_name)).filter(|p| p.exists());
+
+    let mut cmd = match candidate {
+        Some(p) => Command::new(p),
+        None => Command::new(bin_name),
+    };
+    cmd.args(args.iter().skip(2));
+
+    let status = cmd
+        .status()
+        .with_context(|| format!("failed to launch {bin_name}. Is it installed?"))?;
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
+    }
     Ok(())
 }
 

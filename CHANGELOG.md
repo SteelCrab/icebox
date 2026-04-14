@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.3.1
+
+Small CLI improvements.
+
+### ✨ Features
+- **`icebox web [args...]`** — launch the local web UI directly from the main CLI; delegates to `icebox-web` (sibling to current exe first, then PATH) and forwards args + exit code
+
+### 🔧 Improvements
+- Release workflow reads notes from `CHANGELOG.md` per tag (falls back to auto-generated)
+- `actions/checkout` upgraded to v5 (Node.js 24)
+
+### 📦 Install
+
+**macOS (Homebrew)**
+```bash
+brew tap SteelCrab/tap && brew install icebox
+```
+
+**Linux**
+Download from the [release assets](https://github.com/SteelCrab/icebox/releases/tag/v0.3.1).
+
+### ⬆️ Upgrade
+
+```bash
+brew upgrade icebox
+```
+
+**Full Changelog**: https://github.com/SteelCrab/icebox/compare/v0.3.0...v0.3.1
+
 ## v0.3.0
 
 Web UI, MCP server, Notion sync.

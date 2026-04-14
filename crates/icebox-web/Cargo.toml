@@ -13,6 +13,9 @@ workspace = true
 
 [dependencies]
 icebox-task = { path = "../task" }
+icebox-runtime = { path = "../runtime" }
+icebox-api = { path = "../api" }
+icebox-tools = { path = "../tools" }
 axum = { workspace = true }
 tower-http = { workspace = true }
 tokio = { workspace = true }
@@ -21,3 +24,4 @@ serde_json = { workspace = true }
 chrono = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
+futures-util = "0.3"

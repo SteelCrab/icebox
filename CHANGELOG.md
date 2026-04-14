@@ -2,16 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
-## v0.3.1
+## v0.4.0
 
-Small CLI improvements.
+One-shot workspace setup and Claude Code memory integration.
 
 ### ✨ Features
-- **`icebox web [args...]`** — launch the local web UI directly from the main CLI; delegates to `icebox-web` (sibling to current exe first, then PATH) and forwards args + exit code
+- **`icebox init --all`** — a single command that sets up `.icebox/`, `.mcp.json`, and Claude Code memory
+  - Y/n prompts for each step; skip silently if files already exist
+  - Memory entry written to `~/.claude/projects/<slug>/memory/project_icebox_workflow.md`
+  - Memory emphasizes icebox as **primary task tracker**: all work flows through the board via `mcp__icebox__*` tools
+- Minimalist init output (`  created  .icebox/`)
 
 ### 🔧 Improvements
-- Release workflow reads notes from `CHANGELOG.md` per tag (falls back to auto-generated)
-- `actions/checkout` upgraded to v5 (Node.js 24)
+- Removed duplicate `notion_sync` match arm (unreachable warning cleanup)
 
 ### 📦 Install
 
@@ -21,7 +24,10 @@ brew tap SteelCrab/tap && brew install icebox
 ```
 
 **Linux**
-Download from the [release assets](https://github.com/SteelCrab/icebox/releases/tag/v0.3.1).
+```bash
+curl -LO https://github.com/SteelCrab/icebox/releases/download/v0.4.0/icebox-x86_64-unknown-linux-gnu.tar.gz
+tar xzf icebox-x86_64-unknown-linux-gnu.tar.gz && mv icebox ~/.local/bin/
+```
 
 ### ⬆️ Upgrade
 
@@ -29,7 +35,14 @@ Download from the [release assets](https://github.com/SteelCrab/icebox/releases/
 brew upgrade icebox
 ```
 
-**Full Changelog**: https://github.com/SteelCrab/icebox/compare/v0.3.0...v0.3.1
+### Quick Start
+
+```bash
+cd your-project
+icebox init --all      # ★ recommended — workspace + MCP + memory
+```
+
+**Full Changelog**: https://github.com/SteelCrab/icebox/compare/v0.3.1...v0.4.0
 
 ## v0.3.0
 

@@ -53,7 +53,7 @@ fn print_help() {
     println!("  icebox [path]         Launch the TUI kanban board at the given path");
     println!("  icebox init           Initialize .icebox/ workspace (current directory)");
     println!("  icebox init [path]    Initialize .icebox/ workspace at the given path");
-    println!("  icebox web [args...]  Launch the local web UI (delegates to icebox-web)");
+    println!("  icebox init --all     ★ Recommended — also sets up .mcp.json + Claude Code memory");
     println!("  icebox login          Authenticate via OAuth (opens browser)");
     println!("  icebox logout         Clear saved credentials");
     println!("  icebox whoami         Show current authentication status");
@@ -431,34 +431,148 @@ fn run_web(args: &[String]) -> Result<()> {
 // ── Init ──
 
 fn run_init(args: &[String]) -> Result<()> {
-    let workspace = match args.get(2) {
+    let all_flag = args.iter().skip(2).any(|a| a == "--all");
+    let path_arg = args.iter().skip(2).find(|a| !a.starts_with("--"));
+
+    let workspace = match path_arg {
         Some(path) => {
             let p = PathBuf::from(path);
             if p.is_absolute() {
                 p
             } else {
-                env::current_dir()
-                    .context("failed to get current directory")?
-                    .join(p)
+                env::current_dir()?.join(p)
             }
         }
-        None => env::current_dir().context("failed to get current directory")?,
+        None => env::current_dir()?,
     };
 
     if !workspace.is_dir() {
-        fs::create_dir_all(&workspace)
-            .with_context(|| format!("failed to create directory: {}", workspace.display()))?;
+        fs::create_dir_all(&workspace)?;
     }
 
     let fresh = icebox_task::init_workspace(&workspace)?;
-    let icebox_dir = workspace.join(".icebox");
+    report(".icebox/", fresh);
 
-    if fresh {
-        println!("Initialized icebox workspace at {}", icebox_dir.display());
-    } else {
-        println!("Icebox workspace already exists at {}", icebox_dir.display());
+    if all_flag {
+        setup_mcp_config(&workspace)?;
+        setup_claude_memory(&workspace)?;
     }
 
+    Ok(())
+}
+
+fn report(target: &str, created: bool) {
+    let status = if created { "created" } else { "exists " };
+    println!("  {status}  {target}");
+}
+
+fn prompt_yes_no(question: &str, default_yes: bool) -> Result<bool> {
+    use std::io::Write;
+    let hint = if default_yes { "[Y/n]" } else { "[y/N]" };
+    print!("  {question} {hint} ");
+    io::stdout().flush().ok();
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    Ok(match input.trim().to_lowercase().as_str() {
+        "y" | "yes" => true,
+        "n" | "no" => false,
+        _ => default_yes,
+    })
+}
+
+fn setup_mcp_config(workspace: &std::path::Path) -> Result<()> {
+    let path = workspace.join(".mcp.json");
+    if path.exists() {
+        report(".mcp.json", false);
+        return Ok(());
+    }
+    if !prompt_yes_no("Create .mcp.json?", true)? {
+        return Ok(());
+    }
+
+    let content = r#"{
+  "mcpServers": {
+    "icebox": {
+      "command": "icebox",
+      "args": ["mcp"]
+    }
+  }
+}
+"#;
+    fs::write(&path, content)?;
+    report(".mcp.json", true);
+    Ok(())
+}
+
+fn setup_claude_memory(workspace: &std::path::Path) -> Result<()> {
+    let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) else {
+        return Ok(());
+    };
+    if home.is_empty() {
+        return Ok(());
+    }
+
+    let abs = workspace
+        .canonicalize()
+        .unwrap_or_else(|_| workspace.to_path_buf());
+    let mut slug = abs.to_string_lossy().replace(std::path::MAIN_SEPARATOR, "-");
+    if !slug.starts_with('-') {
+        slug = format!("-{slug}");
+    }
+
+    let memory_dir = PathBuf::from(&home)
+        .join(".claude")
+        .join("projects")
+        .join(&slug)
+        .join("memory");
+    let memory_file = memory_dir.join("project_icebox_workflow.md");
+    let index_file = memory_dir.join("MEMORY.md");
+    let label = "claude memory";
+
+    if memory_file.exists() {
+        report(label, false);
+        return Ok(());
+    }
+    if !prompt_yes_no("Add icebox workflow to Claude Code memory?", true)? {
+        return Ok(());
+    }
+
+    fs::create_dir_all(&memory_dir)?;
+
+    let memory_content = r#"---
+name: Icebox kanban workflow — primary task tracker
+description: This project uses icebox as its primary task tracker. All work flows through the kanban board via mcp__icebox__ tools — check the board first, create a task, move through columns, never skip.
+type: project
+---
+
+This project uses [icebox](https://github.com/SteelCrab/icebox) as its **primary task tracking system**. All task-related work MUST flow through the kanban board via MCP tools.
+
+**Core workflow:**
+1. Check the board first with `mcp__icebox__list_tasks`
+2. Create a task with `mcp__icebox__create_task` before starting any work
+3. Move to `inprogress` with `mcp__icebox__move_task` when starting
+4. Update progress notes in task body via `mcp__icebox__update_task`
+5. Move to `testing` when written, `complete` when verified
+6. Never skip the board — even small changes get a task
+
+**Board:** columns are `icebox` / `emergency` / `inprogress` / `testing` / `complete`. Priorities: `low` / `medium` / `high` / `critical`. Optional swimlanes group tasks (e.g., `backend`, `frontend`).
+
+**Why:** User wants icebox to drive all flow control — task ordering, prioritization, and progress visibility. Task body is the source of truth for decisions, references (commits, PRs), and progress notes.
+
+**How to apply:** When the user requests any work (feature, bug, refactor, investigation), do not start coding until a task exists and is in `inprogress`. Prefer MCP tools over direct file edits in `.icebox/tasks/`. If asked "what should I work on?", check the board — don't ask.
+"#;
+
+    fs::write(&memory_file, memory_content)?;
+
+    let entry = "- [Icebox kanban workflow](project_icebox_workflow.md) — primary task tracker, all work flows through the board via mcp__icebox__ tools\n";
+    let idx = fs::read_to_string(&index_file).unwrap_or_default();
+    if !idx.contains("project_icebox_workflow.md") {
+        let sep = if idx.is_empty() || idx.ends_with('\n') { "" } else { "\n" };
+        fs::write(&index_file, format!("{idx}{sep}{entry}"))?;
+    }
+
+    report(label, true);
     Ok(())
 }
 

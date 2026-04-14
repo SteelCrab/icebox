@@ -5,7 +5,9 @@ pub mod session;
 pub mod usage;
 
 pub use config::{IceboxConfig, NotionConfig};
-pub use conversation::{AiEvent, ConversationRuntime, RuntimeCommand, ToolApproval, ToolExecutor};
+pub use conversation::{
+    AiEvent, ConversationRuntime, RuntimeCommand, ToolApproval, ToolExecutor,
+};
 pub use oauth::{
     AuthSource, ClaudeCodeAccount, ClaudeCodeCredentials, OAuthConfig, OAuthTokenSet, PkceCodePair,
     build_authorize_url, build_code_display_authorize_url, claude_code_selection_path,

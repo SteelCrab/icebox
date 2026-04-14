@@ -1,3 +1,5 @@
+mod mcp;
+
 use anyhow::{Context, Result};
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::terminal::{
@@ -25,6 +27,7 @@ fn main() -> Result<()> {
         Some("test-api") => return run_test_api(),
         Some("notion") => return run_notion(&args),
         Some("init") => return run_init(&args),
+        Some("mcp") => return run_mcp(&args),
         Some("help") | Some("--help") | Some("-h") => {
             print_help();
             return Ok(());
@@ -57,6 +60,7 @@ fn print_help() {
     println!("  icebox logout         Clear saved credentials");
     println!("  icebox whoami         Show current authentication status");
     println!("  icebox notion         Show Notion integration setup guide");
+    println!("  icebox mcp            Start MCP server (stdio, for Claude Code)");
     println!("  icebox help           Show this help message");
     println!();
     println!("AUTHENTICATION (recommended: API key):");
@@ -70,6 +74,22 @@ fn print_help() {
         icebox_runtime::DEFAULT_OAUTH_MODEL
     );
     println!("  ICEBOX_CONFIG_HOME  Config directory (default: ~/.icebox)");
+}
+
+// ── MCP ──
+
+fn run_mcp(args: &[String]) -> Result<()> {
+    // Optional: --workspace <path>
+    let workspace = if let Some(pos) = args.iter().position(|a| a == "--workspace") {
+        let path = args
+            .get(pos + 1)
+            .context("--workspace requires a path argument")?;
+        resolve_workspace(path)?
+    } else {
+        env::current_dir().context("failed to get current directory")?
+    };
+
+    mcp::run_mcp_server(&workspace)
 }
 
 // ── Login ──

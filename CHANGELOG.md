@@ -2,6 +2,48 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.4.0
+
+One-shot workspace setup and Claude Code memory integration.
+
+### ✨ Features
+- **`icebox init --all`** — a single command that sets up `.icebox/`, `.mcp.json`, and Claude Code memory
+  - Y/n prompts for each step; skip silently if files already exist
+  - Memory entry written to `~/.claude/projects/<slug>/memory/project_icebox_workflow.md`
+  - Memory emphasizes icebox as **primary task tracker**: all work flows through the board via `mcp__icebox__*` tools
+- Minimalist init output (`  created  .icebox/`)
+
+### 🔧 Improvements
+- Removed duplicate `notion_sync` match arm (unreachable warning cleanup)
+
+### 📦 Install
+
+**macOS (Homebrew)**
+```bash
+brew tap SteelCrab/tap && brew install icebox
+```
+
+**Linux**
+```bash
+curl -LO https://github.com/SteelCrab/icebox/releases/download/v0.4.0/icebox-x86_64-unknown-linux-gnu.tar.gz
+tar xzf icebox-x86_64-unknown-linux-gnu.tar.gz && mv icebox ~/.local/bin/
+```
+
+### ⬆️ Upgrade
+
+```bash
+brew upgrade icebox
+```
+
+### Quick Start
+
+```bash
+cd your-project
+icebox init --all      # ★ recommended — workspace + MCP + memory
+```
+
+**Full Changelog**: https://github.com/SteelCrab/icebox/compare/v0.3.1...v0.4.0
+
 ## v0.3.0
 
 Web UI, MCP server, Notion sync.

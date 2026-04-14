@@ -95,6 +95,12 @@ jobs:
           - target: armv7-unknown-linux-gnueabihf
             os: ubuntu-latest
 
+          # Windows — native
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout source
@@ -112,6 +118,7 @@ jobs:
           target: ${{ matrix.target }}
           archive: icebox-$target
           tar: unix
+          zip: windows
           token: ${{ secrets.GITHUB_TOKEN }}
 
   update-tap:

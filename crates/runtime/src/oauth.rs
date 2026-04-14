@@ -533,7 +533,7 @@ fn load_claude_code_file_account() -> Result<Option<ClaudeCodeAccount>> {
 }
 
 fn load_claude_code_file_credentials() -> Result<Option<ClaudeCodeCredentials>> {
-    let home = match std::env::var("HOME") {
+    let home = match std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
         Ok(home) => home,
         Err(_) => return Ok(None),
     };
@@ -692,7 +692,9 @@ fn write_back_claude_code_credentials(
 }
 
 fn write_back_claude_code_file(credentials: &ClaudeCodeCredentials) -> Result<()> {
-    let home = std::env::var("HOME").context("HOME is not set")?;
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .context("HOME/USERPROFILE is not set")?;
     let path = PathBuf::from(home)
         .join(".claude")
         .join(".credentials.json");
@@ -1106,7 +1108,7 @@ fn config_home() -> PathBuf {
         return PathBuf::from(xdg).join("icebox");
     }
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let home = crate::config::resolve_home_dir();
     PathBuf::from(home).join(".icebox")
 }
 

@@ -2,6 +2,58 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.5.0
+
+Full Windows architecture support across runtime, tooling, and release pipeline.
+
+### ✨ Features
+- **Windows builds** in the release pipeline:
+  - `x86_64-pc-windows-msvc`
+  - `aarch64-pc-windows-msvc`
+- Windows artifacts distributed as `.zip` archives
+- Cross-platform home directory resolution (`HOME` on Unix, `USERPROFILE` on Windows)
+- Shell execution via `cmd /C` on Windows, `sh -c` elsewhere
+
+### 🔧 Improvements
+- File permission handling guarded by `#[cfg(unix)]` (no-op on Windows)
+- Release workflow runs on `windows-latest` for native Windows builds
+
+### 📦 Install
+
+**macOS (Homebrew)**
+```bash
+brew tap SteelCrab/tap && brew install icebox
+```
+
+**Linux**
+```bash
+# x86_64
+curl -LO https://github.com/SteelCrab/icebox/releases/download/v0.5.0/icebox-x86_64-unknown-linux-gnu.tar.gz
+tar xzf icebox-x86_64-unknown-linux-gnu.tar.gz && mv icebox ~/.local/bin/
+
+# aarch64
+curl -LO https://github.com/SteelCrab/icebox/releases/download/v0.5.0/icebox-aarch64-unknown-linux-gnu.tar.gz
+tar xzf icebox-aarch64-unknown-linux-gnu.tar.gz && mv icebox ~/.local/bin/
+```
+
+**Windows (PowerShell)**
+```powershell
+$arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'aarch64' } else { 'x86_64' }
+$asset = "icebox-$arch-pc-windows-msvc.zip"
+Invoke-WebRequest "https://github.com/SteelCrab/icebox/releases/download/v0.5.0/$asset" -OutFile "$env:TEMP\$asset"
+Expand-Archive "$env:TEMP\$asset" -DestinationPath "$env:USERPROFILE\icebox" -Force
+# Add %USERPROFILE%\icebox to PATH (System Properties → Environment Variables)
+```
+
+### ⬆️ Upgrade
+
+```bash
+icebox upgrade         # self-update (any platform)
+brew upgrade icebox    # macOS Homebrew
+```
+
+**Full Changelog**: https://github.com/SteelCrab/icebox/compare/v0.4.2...v0.5.0
+
 ## v0.4.2
 
 Single-binary web UI — `icebox web` now runs in-process, no second binary required.
@@ -66,52 +118,6 @@ brew upgrade icebox
 ```
 
 **Full Changelog**: https://github.com/SteelCrab/icebox/compare/v0.4.0...v0.4.1
-
-## v0.4.0
-
-Full Windows architecture support across runtime, tooling, and release pipeline.
-
-### ✨ Features
-- **Windows builds** in the release pipeline:
-  - `x86_64-pc-windows-msvc`
-  - `aarch64-pc-windows-msvc`
-- Windows artifacts distributed as `.zip` archives
-- Cross-platform home directory resolution (`HOME` on Unix, `USERPROFILE` on Windows)
-- Shell execution via `cmd /C` on Windows, `sh -c` elsewhere
-
-### 🔧 Improvements
-- File permission handling guarded by `#[cfg(unix)]` (no-op on Windows)
-- Release workflow runs on `windows-latest` for native Windows builds
-
-### 📦 Install
-
-**macOS (Homebrew)**
-```bash
-brew tap SteelCrab/tap && brew install icebox
-```
-
-**Windows**
-Download `icebox-x86_64-pc-windows-msvc.zip` or `icebox-aarch64-pc-windows-msvc.zip` from the [release assets](https://github.com/SteelCrab/icebox/releases/tag/v0.5.0), extract, and add to PATH.
-
-**Linux**
-```bash
-# x86_64
-curl -LO https://github.com/SteelCrab/icebox/releases/download/v0.5.0/icebox-x86_64-unknown-linux-gnu.tar.gz
-tar xzf icebox-x86_64-unknown-linux-gnu.tar.gz && mv icebox ~/.local/bin/
-
-# aarch64
-curl -LO https://github.com/SteelCrab/icebox/releases/download/v0.5.0/icebox-aarch64-unknown-linux-gnu.tar.gz
-tar xzf icebox-aarch64-unknown-linux-gnu.tar.gz && mv icebox ~/.local/bin/
-```
-
-### ⬆️ Upgrade
-
-```bash
-icebox upgrade         # self-update (any platform)
-brew upgrade icebox    # macOS Homebrew
-```
-
-**Full Changelog**: https://github.com/SteelCrab/icebox/compare/v0.4.0...v0.5.0
 
 ## v0.4.0
 

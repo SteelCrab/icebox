@@ -38,11 +38,13 @@ tar xzf icebox-aarch64-unknown-linux-gnu.tar.gz && mv icebox ~/.local/bin/
 
 **Windows (PowerShell)**
 ```powershell
-$arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'aarch64' } else { 'x86_64' }
-$asset = "icebox-$arch-pc-windows-msvc.zip"
-Invoke-WebRequest "https://github.com/SteelCrab/icebox/releases/download/v0.5.0/$asset" -OutFile "$env:TEMP\$asset"
-Expand-Archive "$env:TEMP\$asset" -DestinationPath "$env:USERPROFILE\icebox" -Force
-# Add %USERPROFILE%\icebox to PATH (System Properties → Environment Variables)
+# x86_64
+Invoke-WebRequest https://github.com/SteelCrab/icebox/releases/download/v0.5.0/icebox-x86_64-pc-windows-msvc.zip -OutFile icebox.zip
+Expand-Archive icebox.zip $env:USERPROFILE\icebox -Force; [Environment]::SetEnvironmentVariable('Path', "$([Environment]::GetEnvironmentVariable('Path','User'));$env:USERPROFILE\icebox", 'User')
+
+# aarch64
+Invoke-WebRequest https://github.com/SteelCrab/icebox/releases/download/v0.5.0/icebox-aarch64-pc-windows-msvc.zip -OutFile icebox.zip
+Expand-Archive icebox.zip $env:USERPROFILE\icebox -Force; [Environment]::SetEnvironmentVariable('Path', "$([Environment]::GetEnvironmentVariable('Path','User'));$env:USERPROFILE\icebox", 'User')
 ```
 
 ### ⬆️ Upgrade

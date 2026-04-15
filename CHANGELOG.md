@@ -2,7 +2,72 @@
 
 All notable changes to this project will be documented in this file.
 
-## v0.5.0
+## v0.4.2
+
+Single-binary web UI — `icebox web` now runs in-process, no second binary required.
+
+### 🔧 Improvements
+- **`icebox web` runs in-process** — previously the subcommand delegated to a separate `icebox-web` binary via `Command::spawn`, which failed with `command not found` for users who only installed `icebox`. Now the local kanban web UI starts directly inside the `icebox` binary on its own Tokio runtime.
+- `icebox-web` crate converted to **library-only**: `[[bin]]` target removed, `clap` dependency dropped, new public entry `icebox_web::serve(path, port)`.
+- `icebox web --help` now documents `--path` and `--port` options.
+
+### 📦 Install
+
+**macOS (Homebrew)**
+```bash
+brew tap SteelCrab/tap && brew install icebox
+```
+
+**Linux**
+```bash
+curl -LO https://github.com/SteelCrab/icebox/releases/download/v0.4.2/icebox-x86_64-unknown-linux-gnu.tar.gz
+tar xzf icebox-x86_64-unknown-linux-gnu.tar.gz && mv icebox ~/.local/bin/
+```
+
+### ⬆️ Upgrade
+
+```bash
+brew upgrade icebox
+```
+
+### Quick Start
+
+```bash
+icebox web --path . --port 3000
+# → http://127.0.0.1:3000
+```
+
+**Full Changelog**: https://github.com/SteelCrab/icebox/compare/v0.4.1...v0.4.2
+
+## v0.4.1
+
+UX polish for `icebox init --all`.
+
+### 🔧 Improvements
+- **Memory content preview** — `init --all` now prints the exact file path and full memory entry that will be written to `~/.claude/projects/<slug>/memory/project_icebox_workflow.md` **before** asking for Y/n confirmation, so users can review what goes into Claude Code memory before accepting.
+
+### 📦 Install
+
+**macOS (Homebrew)**
+```bash
+brew tap SteelCrab/tap && brew install icebox
+```
+
+**Linux**
+```bash
+curl -LO https://github.com/SteelCrab/icebox/releases/download/v0.4.1/icebox-x86_64-unknown-linux-gnu.tar.gz
+tar xzf icebox-x86_64-unknown-linux-gnu.tar.gz && mv icebox ~/.local/bin/
+```
+
+### ⬆️ Upgrade
+
+```bash
+brew upgrade icebox
+```
+
+**Full Changelog**: https://github.com/SteelCrab/icebox/compare/v0.4.0...v0.4.1
+
+## v0.4.0
 
 Full Windows architecture support across runtime, tooling, and release pipeline.
 

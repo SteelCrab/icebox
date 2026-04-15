@@ -4,13 +4,16 @@
 
 ## Quick Start
 
+The web UI ships inside the `icebox` binary — no separate `icebox-web` executable.
+
 ```bash
-cargo run -p icebox-web              # dev build
-cargo build --release -p icebox-web  # release build
-./target/release/icebox-web
+icebox web                           # launch at http://localhost:3000 (cwd)
+icebox web --path ./my-board         # specify workspace directory
+icebox web --port 8080               # specify port
+icebox web --path ./my-board --port 8080
 ```
 
-Open **http://localhost:3000**.
+Open **http://localhost:3000** (or the port you chose).
 
 ## Options
 
@@ -18,10 +21,7 @@ Open **http://localhost:3000**.
 |------|-------------|---------|
 | `--path <PATH>` | Workspace directory containing `.icebox/` | `.` |
 | `--port <PORT>` | Port to listen on | `3000` |
-
-```bash
-icebox-web --path ./my-board --port 8080
-```
+| `-h`, `--help` | Show help | — |
 
 ## Board
 
@@ -102,8 +102,11 @@ TUI changes appear after clicking **Refresh**. Web changes appear in the TUI imm
 ```bash
 git clone https://github.com/SteelCrab/icebox.git
 cd icebox
-cargo build --release -p icebox-web
-cp target/release/icebox-web ~/.local/bin/
+cargo build --release
+cp target/release/icebox ~/.local/bin/
+icebox web
 ```
+
+The `icebox-web` crate is library-only (`icebox_web::serve(path, port)`) and is linked into the `icebox` binary; building the top-level workspace is enough.
 
 Requires Rust edition 2024 (`rustup update stable`).

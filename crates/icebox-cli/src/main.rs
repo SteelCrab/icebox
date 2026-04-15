@@ -405,27 +405,43 @@ fn run_test_api() -> Result<()> {
 
 // ── Web ──
 
+fn print_web_help() {
+    println!("icebox web — Launch the local kanban web UI");
+    println!();
+    println!("USAGE:");
+    println!("  icebox web [--path <dir>] [--port <port>]");
+    println!();
+    println!("OPTIONS:");
+    println!("  --path <dir>   Workspace directory containing .icebox/ (default: .)");
+    println!("  --port <port>  Port to listen on (default: 3000)");
+    println!("  -h, --help     Show this help message");
+}
+
 fn run_web(args: &[String]) -> Result<()> {
-    use std::process::Command;
+    let mut path = PathBuf::from(".");
+    let mut port: u16 = 3000;
 
-    // Locate icebox-web binary: same dir as current exe, then PATH
-    let bin_name = if cfg!(windows) { "icebox-web.exe" } else { "icebox-web" };
-    let exe_dir = env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf()));
-    let candidate = exe_dir.as_ref().map(|d| d.join(bin_name)).filter(|p| p.exists());
-
-    let mut cmd = match candidate {
-        Some(p) => Command::new(p),
-        None => Command::new(bin_name),
-    };
-    cmd.args(args.iter().skip(2));
-
-    let status = cmd
-        .status()
-        .with_context(|| format!("failed to launch {bin_name}. Is it installed?"))?;
-    if !status.success() {
-        std::process::exit(status.code().unwrap_or(1));
+    let mut iter = args.iter().skip(2);
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--path" => {
+                let v = iter.next().context("--path requires a value")?;
+                path = PathBuf::from(v);
+            }
+            "--port" => {
+                let v = iter.next().context("--port requires a value")?;
+                port = v.parse().with_context(|| format!("invalid port: {v}"))?;
+            }
+            "-h" | "--help" => {
+                print_web_help();
+                return Ok(());
+            }
+            other => anyhow::bail!("unknown argument for `icebox web`: {other}"),
+        }
     }
-    Ok(())
+
+    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
+    rt.block_on(icebox_web::serve(path, port))
 }
 
 // ── Init ──
@@ -487,9 +503,6 @@ fn setup_mcp_config(workspace: &std::path::Path) -> Result<()> {
         report(".mcp.json", false);
         return Ok(());
     }
-    if !prompt_yes_no("Create .mcp.json?", true)? {
-        return Ok(());
-    }
 
     let content = r#"{
   "mcpServers": {
@@ -500,6 +513,25 @@ fn setup_mcp_config(workspace: &std::path::Path) -> Result<()> {
   }
 }
 "#;
+
+    // Preview what will be written and why, so the user can decide informed.
+    println!();
+    println!("  About .mcp.json:");
+    println!("    An MCP (Model Context Protocol) config that lets Claude Code talk to");
+    println!("    this project's icebox board. With it, Claude Code can list / create /");
+    println!("    move tasks directly via `mcp__icebox__*` tools.");
+    println!();
+    println!("    file:  {}", path.display());
+    println!();
+    for line in content.lines() {
+        println!("    │ {line}");
+    }
+    println!();
+
+    if !prompt_yes_no("Create .mcp.json?", true)? {
+        return Ok(());
+    }
+
     fs::write(&path, content)?;
     report(".mcp.json", true);
     Ok(())
@@ -534,11 +566,6 @@ fn setup_claude_memory(workspace: &std::path::Path) -> Result<()> {
         report(label, false);
         return Ok(());
     }
-    if !prompt_yes_no("Add icebox workflow to Claude Code memory?", true)? {
-        return Ok(());
-    }
-
-    fs::create_dir_all(&memory_dir)?;
 
     let memory_content = r#"---
 name: Icebox kanban workflow — primary task tracker
@@ -562,6 +589,27 @@ This project uses [icebox](https://github.com/SteelCrab/icebox) as its **primary
 
 **How to apply:** When the user requests any work (feature, bug, refactor, investigation), do not start coding until a task exists and is in `inprogress`. Prefer MCP tools over direct file edits in `.icebox/tasks/`. If asked "what should I work on?", check the board — don't ask.
 "#;
+
+    // Preview what will be added and why, so the user can decide informed.
+    println!();
+    println!("  About Claude Code memory entry:");
+    println!("    A project-scoped memory file that teaches Claude Code to treat icebox");
+    println!("    as the primary task tracker for this project — check the board, create");
+    println!("    a task, update progress, and never skip it. Loaded automatically by");
+    println!("    Claude Code when you work in this directory.");
+    println!();
+    println!("    file:  {}", memory_file.display());
+    println!();
+    for line in memory_content.lines() {
+        println!("    │ {line}");
+    }
+    println!();
+
+    if !prompt_yes_no("Add icebox workflow to Claude Code memory?", true)? {
+        return Ok(());
+    }
+
+    fs::create_dir_all(&memory_dir)?;
 
     fs::write(&memory_file, memory_content)?;
 

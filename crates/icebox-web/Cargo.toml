@@ -4,10 +4,6 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
-[[bin]]
-name = "icebox-web"
-path = "src/main.rs"
-
 [lints]
 workspace = true
 
@@ -23,5 +19,4 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
 anyhow = { workspace = true }
-clap = { workspace = true }
 futures-util = "0.3"

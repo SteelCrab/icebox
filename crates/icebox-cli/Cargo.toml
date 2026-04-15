@@ -13,6 +13,7 @@ icebox-task = { path = "../task" }
 icebox-api = { path = "../api" }
 icebox-runtime = { path = "../runtime" }
 icebox-tools = { path = "../tools" }
+icebox-web = { path = "../icebox-web" }
 ratatui = { workspace = true }
 crossterm = { workspace = true }
 serde = { workspace = true }

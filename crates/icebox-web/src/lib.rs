@@ -9,7 +9,6 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use clap::Parser;
 use futures_util::{SinkExt, StreamExt};
 use icebox_task::model::Column;
 use icebox_task::store::TaskStore;
@@ -17,28 +16,18 @@ use serde::Deserialize;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-#[derive(Parser)]
-#[command(name = "icebox-web", about = "Icebox local web UI")]
-struct Cli {
-    /// Path to the workspace (directory containing .icebox/)
-    #[arg(long, default_value = ".")]
-    path: PathBuf,
-
-    /// Port to listen on
-    #[arg(long, default_value_t = 3000)]
-    port: u16,
-}
-
 struct AppState {
     store: TaskStore,
     workspace: PathBuf,
     shared_store: Arc<Mutex<TaskStore>>,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let cli = Cli::parse();
-    let workspace = cli.path.canonicalize().unwrap_or(cli.path);
+/// Start the Icebox local web UI server.
+///
+/// Serves the kanban board at `http://127.0.0.1:{port}` with the given
+/// workspace directory (which must contain or be usable as `.icebox/`).
+pub async fn serve(path: PathBuf, port: u16) -> Result<()> {
+    let workspace = path.canonicalize().unwrap_or(path);
     let store = TaskStore::open(&workspace)?;
     let shared_store = Arc::new(Mutex::new(TaskStore::open(&workspace)?));
     let state = Arc::new(AppState {
@@ -55,7 +44,7 @@ async fn main() -> Result<()> {
         .route("/ws/chat", get(ws_chat_handler))
         .with_state(state);
 
-    let addr = format!("127.0.0.1:{}", cli.port);
+    let addr = format!("127.0.0.1:{port}");
     println!("icebox web → http://{addr}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;

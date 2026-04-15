@@ -405,27 +405,43 @@ fn run_test_api() -> Result<()> {
 
 // ── Web ──
 
+fn print_web_help() {
+    println!("icebox web — Launch the local kanban web UI");
+    println!();
+    println!("USAGE:");
+    println!("  icebox web [--path <dir>] [--port <port>]");
+    println!();
+    println!("OPTIONS:");
+    println!("  --path <dir>   Workspace directory containing .icebox/ (default: .)");
+    println!("  --port <port>  Port to listen on (default: 3000)");
+    println!("  -h, --help     Show this help message");
+}
+
 fn run_web(args: &[String]) -> Result<()> {
-    use std::process::Command;
+    let mut path = PathBuf::from(".");
+    let mut port: u16 = 3000;
 
-    // Locate icebox-web binary: same dir as current exe, then PATH
-    let bin_name = if cfg!(windows) { "icebox-web.exe" } else { "icebox-web" };
-    let exe_dir = env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf()));
-    let candidate = exe_dir.as_ref().map(|d| d.join(bin_name)).filter(|p| p.exists());
-
-    let mut cmd = match candidate {
-        Some(p) => Command::new(p),
-        None => Command::new(bin_name),
-    };
-    cmd.args(args.iter().skip(2));
-
-    let status = cmd
-        .status()
-        .with_context(|| format!("failed to launch {bin_name}. Is it installed?"))?;
-    if !status.success() {
-        std::process::exit(status.code().unwrap_or(1));
+    let mut iter = args.iter().skip(2);
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--path" => {
+                let v = iter.next().context("--path requires a value")?;
+                path = PathBuf::from(v);
+            }
+            "--port" => {
+                let v = iter.next().context("--port requires a value")?;
+                port = v.parse().with_context(|| format!("invalid port: {v}"))?;
+            }
+            "-h" | "--help" => {
+                print_web_help();
+                return Ok(());
+            }
+            other => anyhow::bail!("unknown argument for `icebox web`: {other}"),
+        }
     }
-    Ok(())
+
+    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
+    rt.block_on(icebox_web::serve(path, port))
 }
 
 // ── Init ──

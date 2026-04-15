@@ -48,7 +48,7 @@ A terminal-based kanban board built with Rust, featuring an integrated AI assist
 - **Swimlanes** — Tab-based swimlane filtering with `[`/`]` navigation
 - **AI Memory** — Persistent memory across sessions for AI context
 - **Task Storage** — Markdown files with YAML frontmatter (`.icebox/tasks/`)
-- **Web UI** — Responsive local kanban board in the browser via `icebox-web`
+- **Web UI** — Responsive local kanban board in the browser via `icebox web`
 
 ## Installation
 
@@ -144,6 +144,16 @@ icebox init ./my-board   # Initialize at a specific path
 icebox                   # Launch TUI in current directory
 icebox ./my-board        # Launch TUI at the given path
 ```
+
+### Launch Web UI
+
+```bash
+icebox web                            # http://localhost:3000 (cwd)
+icebox web --path ./my-board          # specify workspace
+icebox web --port 8080                # specify port
+```
+
+See the **[Web UI Guide](docs/web.md)** for details.
 
 ### Authentication
 
@@ -279,11 +289,11 @@ AI sessions are persisted per task in `.icebox/sessions/{task_id}.json`.
 
 ## Web UI
 
-`icebox-web` is a lightweight local web server that renders your board in the browser. It reads the same `.icebox/tasks/` files as the TUI — no separate data store.
+`icebox web` launches a lightweight local web server in-process (single binary — no separate `icebox-web` executable required). It reads the same `.icebox/tasks/` files as the TUI — no separate data store.
 
 ```bash
-cargo build --release -p icebox-web
-./target/release/icebox-web   # opens at http://localhost:3000
+icebox web                            # http://localhost:3000 (cwd)
+icebox web --path ./my-board --port 8080
 ```
 
 See the **[Web UI Guide](docs/web.md)** for options, responsive layout details, and architecture.
@@ -299,7 +309,7 @@ crates/
   runtime/      # Runtime — ConversationRuntime, Session, OAuth PKCE, UsageTracker
   tools/        # 12 tools — bash, read/write_file, glob/grep_search, kanban (list/create/update/move), memory
   commands/     # 18 slash commands (Board, AI, Auth, Session)
-  icebox-web/   # Web UI — Axum HTTP server + responsive single-page kanban
+  icebox-web/   # Web UI library — Axum HTTP server (linked into icebox binary via `icebox web`)
 ```
 
 ## Built-in AI Tools

@@ -1270,35 +1270,14 @@ fn percent_decode(s: &str) -> String {
 fn generate_random_string(len: usize) -> String {
     const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
 
-    // Read from /dev/urandom (available on macOS and Linux)
     let mut bytes = vec![0u8; len];
-    if let Ok(mut file) = fs::File::open("/dev/urandom") {
-        use std::io::Read as _;
-        if file.read_exact(&mut bytes).is_ok() {
-            return bytes
-                .iter()
-                .map(|b| CHARSET[(*b as usize) % CHARSET.len()] as char)
-                .collect();
-        }
+    if let Err(e) = getrandom::getrandom(&mut bytes) {
+        return format!("RNG_ERROR_{e}");
     }
-
-    // Fallback: time + pid (only if /dev/urandom unavailable)
-    let seed = now_unix()
-        .wrapping_mul(6_364_136_223_846_793_005)
-        .wrapping_add(u64::from(std::process::id()));
-
-    let mut state = seed;
-    let mut result = String::with_capacity(len);
-
-    for _ in 0..len {
-        state = state
-            .wrapping_mul(6_364_136_223_846_793_005)
-            .wrapping_add(1_442_695_040_888_963_407);
-        let idx = ((state >> 33) as usize) % CHARSET.len();
-        result.push(CHARSET[idx] as char);
-    }
-
-    result
+    bytes
+        .iter()
+        .map(|b| CHARSET[(*b as usize) % CHARSET.len()] as char)
+        .collect()
 }
 
 pub fn now_unix() -> u64 {

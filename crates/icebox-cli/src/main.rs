@@ -14,6 +14,8 @@ use std::panic;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+mod upgrade;
+
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
 
@@ -25,6 +27,7 @@ fn main() -> Result<()> {
         Some("test-api") => return run_test_api(),
         Some("init") => return run_init(&args),
         Some("web") => return run_web(&args),
+        Some("upgrade") => return upgrade::run(),
         Some("help") | Some("--help") | Some("-h") => {
             print_help();
             return Ok(());
@@ -57,6 +60,7 @@ fn print_help() {
     println!("  icebox login          Authenticate via OAuth (opens browser)");
     println!("  icebox logout         Clear saved credentials");
     println!("  icebox whoami         Show current authentication status");
+    println!("  icebox upgrade        Self-update from latest GitHub release");
     println!("  icebox help           Show this help message");
     println!();
     println!("AUTHENTICATION (recommended: API key):");

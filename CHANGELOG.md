@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.5.3
+
+Hotfix: `icebox upgrade` was unresponsive on Windows.
+
+### 🐛 Bug fixes
+- **Fix `icebox upgrade` hang on Windows** — skip `self_update`'s redundant `[Y/n]` prompt that swallowed PowerShell stdin (`no_confirm(true)`).
+
+### 📦 Install
+
+```bash
+icebox upgrade         # self-update (any platform)
+brew upgrade icebox    # macOS Homebrew
+```
+
+**Full Changelog**: https://github.com/SteelCrab/icebox/compare/v0.5.2...v0.5.3
+
 ## v0.5.2
 
 Interactive upgrade prompt at startup — no more missed releases.

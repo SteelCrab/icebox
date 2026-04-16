@@ -173,6 +173,10 @@ pub fn run() -> Result<()> {
         .bin_name(BIN_NAME)
         .show_download_progress(true)
         .current_version(current)
+        // Skip self_update's own [Y/n] prompt — we already asked the user
+        // via prompt_and_upgrade_if_available(), and on Windows PowerShell
+        // the inner prompt can lose stdin echo and appear unresponsive.
+        .no_confirm(true)
         .build()
         .context("failed to configure self-update")?;
 

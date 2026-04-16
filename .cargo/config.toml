@@ -1,0 +1,10 @@
+# Statically link the MSVC C runtime on Windows so the binary runs on fresh
+# installs without the Visual C++ Redistributable (avoids STATUS_DLL_NOT_FOUND,
+# exit code 0xC0000135). Target-specific sections apply only to those targets,
+# so macOS/Linux builds are unaffected.
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

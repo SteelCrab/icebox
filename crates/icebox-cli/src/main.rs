@@ -256,8 +256,13 @@ fn open_browser(url: &str) -> Result<()> {
     }
     #[cfg(target_os = "windows")]
     {
+        // `&` in OAuth URLs is a cmd command separator; Rust's default
+        // arg quoting doesn't escape it. Wrap the URL in quotes inside
+        // a raw command line, with an empty title arg for `start`.
+        use std::os::windows::process::CommandExt;
         std::process::Command::new("cmd")
-            .args(&["/C", "start", url])
+            .raw_arg("/C")
+            .raw_arg(format!("start \"\" \"{url}\""))
             .spawn()
             .context("failed to open browser")?;
     }

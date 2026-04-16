@@ -45,8 +45,11 @@ pub async fn serve(path: PathBuf, port: u16) -> Result<()> {
         .with_state(state);
 
     let addr = format!("127.0.0.1:{port}");
-    println!("icebox web → http://{addr}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
+    // Resolve the actual port — when `port == 0` the OS picks a free one,
+    // so the printed URL must come from `local_addr()`, not the input.
+    let bound = listener.local_addr()?;
+    println!("icebox web → http://{bound}");
     axum::serve(listener, app).await?;
     Ok(())
 }
@@ -572,6 +575,10 @@ static HTML: &str = r#"<!DOCTYPE html>
     display: flex;
     flex-direction: column;
     gap: 8px;
+    /* min-height:0 lets the inner .cards honor overflow-y:auto.
+       Without it, a flex child's default min-height is auto, so the
+       column grows to the content size and breaks vertical scrolling. */
+    min-height: 0;
   }
 
   .col-header {
@@ -607,6 +614,10 @@ static HTML: &str = r#"<!DOCTYPE html>
   /* ── Cards ── */
   .cards {
     flex: 1;
+    /* min-height:0 disables the flex-item default min-height:auto, so
+       overflow-y:auto actually constrains the cards stack to its parent
+       column height instead of letting it grow indefinitely. */
+    min-height: 0;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
@@ -1744,6 +1755,21 @@ async function moveTask(taskId, column) {
     if (res.ok) loadTasks();
   } catch (e) { /* ignore */ }
 }
+
+// Auto-refresh: poll every 3s while the tab is visible. Skip when a modal
+// is open or the AI is mid-stream so the user's interaction isn't disrupted.
+const REFRESH_INTERVAL_MS = 3000;
+setInterval(() => {
+  if (document.hidden) return;
+  if (document.querySelector('.modal-overlay.open')) return;
+  if (aiBusy) return;
+  loadTasks();
+}, REFRESH_INTERVAL_MS);
+
+// Refresh immediately when the tab regains focus after being hidden.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) loadTasks();
+});
 
 loadTasks();
 </script>

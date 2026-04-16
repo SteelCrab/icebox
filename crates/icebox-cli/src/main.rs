@@ -439,13 +439,14 @@ fn print_web_help() {
     println!();
     println!("OPTIONS:");
     println!("  --path <dir>   Workspace directory containing .icebox/ (default: .)");
-    println!("  --port <port>  Port to listen on (default: 3000)");
+    println!("  --port <port>  Port to listen on (default: random free port)");
     println!("  -h, --help     Show this help message");
 }
 
 fn run_web(args: &[String]) -> Result<()> {
     let mut path = PathBuf::from(".");
-    let mut port: u16 = 3000;
+    // 0 means "OS picks a free port"; the actual one is logged after bind.
+    let mut port: u16 = 0;
 
     let mut iter = args.iter().skip(2);
     while let Some(arg) = iter.next() {

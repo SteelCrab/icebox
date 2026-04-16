@@ -22,6 +22,17 @@ Interactive upgrade prompt at startup — no more missed releases.
 ### 🔧 Improvements
 - Removed the easily-missed background-thread / status-bar version
   notification — the new blocking prompt fully replaces it.
+- **Web UI: live board updates** — the page now refreshes the task list
+  every 3 seconds (and immediately when the tab regains focus), so changes
+  made via the TUI, MCP, or another browser tab show up without manually
+  pressing the Refresh button. Polling is skipped while a task modal is
+  open or the AI chat is mid-stream to avoid disrupting in-progress work.
+- **Web UI: `--port` defaults to a random free port** — running `icebox web`
+  without `--port` now binds to port `0` so the OS picks an available port,
+  avoiding `address already in use` failures on the previous hard-coded
+  default of `3000`. The actual port is printed to stdout after bind
+  (`icebox web → http://127.0.0.1:54321`). Pass `--port 3000` to keep the
+  old behavior.
 
 ### 🐛 Bug fixes
 - **Windows: keyboard input registered twice** — Windows console emits both
@@ -36,6 +47,12 @@ Interactive upgrade prompt at startup — no more missed releases.
   that NTFS rejects with `ERROR_INVALID_NAME`. Strip the verbatim prefix and
   replace every illegal NTFS char (`< > : " / \ | ? *`) with `-`, then
   collapse consecutive dashes.
+- **Web UI: column tasks could not be scrolled when overflowing** — the
+  `.cards` flex container relied on the parent `.column`'s default
+  `min-height: auto`, which let the content stretch beyond the board height
+  instead of clipping to it, so `overflow-y: auto` never engaged. Add
+  `min-height: 0` to both `.column` and `.cards` to restore proper vertical
+  scrolling inside each column.
 
 ### 📦 Install
 

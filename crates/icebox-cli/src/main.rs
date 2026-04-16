@@ -14,6 +14,7 @@ use std::panic;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+mod mcp;
 mod upgrade;
 
 fn main() -> Result<()> {
@@ -26,6 +27,7 @@ fn main() -> Result<()> {
         Some("whoami") => return run_whoami(),
         Some("test-api") => return run_test_api(),
         Some("init") => return run_init(&args),
+        Some("mcp") => return run_mcp(&args),
         Some("web") => return run_web(&args),
         Some("upgrade") => return upgrade::run(),
         Some("help") | Some("--help") | Some("-h") => {
@@ -60,6 +62,7 @@ fn print_help() {
     println!("  icebox login          Authenticate via OAuth (opens browser)");
     println!("  icebox logout         Clear saved credentials");
     println!("  icebox whoami         Show current authentication status");
+    println!("  icebox mcp            Start MCP server (stdio, for Claude Code)");
     println!("  icebox upgrade        Self-update from latest GitHub release");
     println!("  icebox help           Show this help message");
     println!();
@@ -405,6 +408,20 @@ fn run_test_api() -> Result<()> {
     }
 
     Ok(())
+}
+
+// ── MCP ──
+
+fn run_mcp(args: &[String]) -> Result<()> {
+    let workspace = if let Some(pos) = args.iter().position(|a| a == "--workspace") {
+        let path = args
+            .get(pos + 1)
+            .context("--workspace requires a path argument")?;
+        resolve_workspace(path)?
+    } else {
+        env::current_dir().context("failed to get current directory")?
+    };
+    mcp::run_mcp_server(&workspace)
 }
 
 // ── Web ──

@@ -106,6 +106,74 @@ chmod +x icebox
 mv icebox ~/.local/bin/    # または $PATH 内の任意のディレクトリ
 ```
 
+### Windows
+
+> 💡 **WSL の使用を推奨します。** icebox の AI `bash` ツールは `grep`/`sed`/`awk`/`find` などの Unix コマンドを頻繁に呼び出しますが、Windows ネイティブでは `cmd /C` にフォールバックされ、ほとんど動作しません。WSL なら Linux バイナリがそのまま動作し、OAuth コールバックやパス処理も安定します。
+
+#### オプション A: WSL (推奨)
+
+**1. WSL のインストール** (Windows 10 2004+ / Windows 11)
+
+PowerShell を**管理者として実行**:
+
+```powershell
+wsl --install
+```
+
+デフォルトの Ubuntu ディストリビューションが自動でインストールされます。再起動後にユーザー名・パスワードを設定してください。すでに WSL が入っている場合は `wsl --update` で最新化します。
+
+**2. WSL 内で icebox をインストール**
+
+WSL ターミナル (Ubuntu) を開き、[Linux クイックインストール](#クイックインストール) に従ってください:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SteelCrab/icebox/main/install.sh | bash
+```
+
+**3. 作業ディレクトリの推奨**
+
+パフォーマンスのため、WSL ファイルシステム (`~/projects/...`) 内で作業してください。`/mnt/c/...` (Windows ディスク) はファイル I/O が遅く、TUI のレスポンスが低下します。
+
+**4. Windows Terminal の利用を推奨**
+
+レガシーコンソールよりも [Windows Terminal](https://aka.ms/terminal) のほうが TUI のカラー・Unicode・マウスサポートが優れています。
+
+#### オプション B: Windows ネイティブ (PowerShell)
+
+WSL が利用できない環境 (社内ポリシーなど) でのみ推奨します。AI `bash` ツールの一部コマンドが動作しない場合があります。
+
+```powershell
+$ErrorActionPreference = 'Stop'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$arch = if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'aarch64' } else { 'x86_64' }
+$asset = "icebox-$arch-pc-windows-msvc.zip"
+$dest = "$env:USERPROFILE\icebox"
+Invoke-WebRequest "https://github.com/SteelCrab/icebox/releases/latest/download/$asset" -OutFile "$env:TEMP\$asset"
+Expand-Archive "$env:TEMP\$asset" -DestinationPath $dest -Force
+$userPath = [Environment]::GetEnvironmentVariable('Path','User')
+if (($userPath -split ';') -notcontains $dest) {
+    [Environment]::SetEnvironmentVariable('Path', "$dest;$userPath", 'User')
+}
+$env:Path = "$dest;$env:Path"
+Write-Host "icebox installed to $dest. Run 'icebox' to start."
+```
+
+> 初回起動時に SmartScreen がブロックする場合があります — **詳細情報 → 実行** をクリック (バイナリは未署名)。
+
+##### ビルド済みバイナリ (手動)
+
+[最新リリース](https://github.com/SteelCrab/icebox/releases/latest) からダウンロード:
+
+| アーキテクチャ | アセット |
+|---|---|
+| x86_64 | `icebox-x86_64-pc-windows-msvc.zip` |
+| aarch64 (ARM64) | `icebox-aarch64-pc-windows-msvc.zip` |
+
+```powershell
+Expand-Archive icebox-x86_64-pc-windows-msvc.zip -DestinationPath $env:USERPROFILE\icebox
+# %USERPROFILE%\icebox を PATH に追加 (システムのプロパティ → 環境変数)
+```
+
 ### ソースからビルド (全OS)
 
 #### Cargoでインストール

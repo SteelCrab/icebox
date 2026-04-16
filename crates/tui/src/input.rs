@@ -964,22 +964,30 @@ fn extract_selected_text(app: &App, sel: &TextSelection) -> String {
 }
 
 fn copy_to_clipboard(text: &str) {
-    if cfg!(target_os = "macos") {
-        let child = std::process::Command::new("pbcopy")
-            .stdin(std::process::Stdio::piped())
-            .spawn();
-        if let Ok(mut child) = child {
-            if let Some(ref mut stdin) = child.stdin {
-                let _ = std::io::Write::write_all(stdin, text.as_bytes());
-            }
-            let _ = child.wait();
-        }
-        return;
+    #[cfg(target_os = "macos")]
+    {
+        spawn_clipboard_writer(
+            std::process::Command::new("pbcopy"),
+            text,
+        );
     }
-    let child = std::process::Command::new("xclip")
-        .args(["-selection", "clipboard"])
-        .stdin(std::process::Stdio::piped())
-        .spawn();
+    #[cfg(target_os = "windows")]
+    {
+        spawn_clipboard_writer(
+            std::process::Command::new("clip"),
+            text,
+        );
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        let mut cmd = std::process::Command::new("xclip");
+        cmd.args(["-selection", "clipboard"]);
+        spawn_clipboard_writer(cmd, text);
+    }
+}
+
+fn spawn_clipboard_writer(mut cmd: std::process::Command, text: &str) {
+    let child = cmd.stdin(std::process::Stdio::piped()).spawn();
     if let Ok(mut child) = child {
         if let Some(ref mut stdin) = child.stdin {
             let _ = std::io::Write::write_all(stdin, text.as_bytes());

@@ -113,21 +113,59 @@ mv icebox ~/.local/bin/    # or any directory in $PATH
 
 ### Windows
 
-#### Quick Install (PowerShell)
+> 💡 **WSL is recommended.** icebox's AI `bash` tool frequently invokes Unix commands like `grep`/`sed`/`awk`/`find`, which fall back to `cmd /C` on Windows native and mostly do not work. With WSL the Linux binary runs as-is, and OAuth callbacks plus path handling stay stable.
+
+#### Option A: WSL (recommended)
+
+**1. Install WSL** (Windows 10 2004+ / Windows 11)
+
+Open PowerShell **as Administrator** and run:
+
+```powershell
+wsl --install
+```
+
+The default Ubuntu distribution installs automatically. After reboot, set up a username/password. If WSL is already installed, refresh it with `wsl --update`.
+
+**2. Install icebox inside WSL**
+
+Open the WSL terminal (Ubuntu) and follow the [Linux Quick Install](#quick-install):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SteelCrab/icebox/main/install.sh | bash
+```
+
+**3. Working directory tip**
+
+For best performance, work inside the WSL filesystem (e.g. `~/projects/...`). Files under `/mnt/c/...` (the Windows disk) suffer slow I/O and degrade TUI responsiveness.
+
+**4. Use Windows Terminal**
+
+[Windows Terminal](https://aka.ms/terminal) provides better color, Unicode, and mouse support for TUIs than the legacy console.
+
+#### Option B: Windows Native (PowerShell)
+
+Use this only when WSL is unavailable (e.g. corporate policy). Some AI `bash` tool invocations may not work.
 
 ```powershell
 $ErrorActionPreference = 'Stop'
-$arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'aarch64' } else { 'x86_64' }
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$arch = if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'aarch64' } else { 'x86_64' }
 $asset = "icebox-$arch-pc-windows-msvc.zip"
 $dest = "$env:USERPROFILE\icebox"
 Invoke-WebRequest "https://github.com/SteelCrab/icebox/releases/latest/download/$asset" -OutFile "$env:TEMP\$asset"
 Expand-Archive "$env:TEMP\$asset" -DestinationPath $dest -Force
-[Environment]::SetEnvironmentVariable('Path', "$dest;" + [Environment]::GetEnvironmentVariable('Path','User'), 'User')
+$userPath = [Environment]::GetEnvironmentVariable('Path','User')
+if (($userPath -split ';') -notcontains $dest) {
+    [Environment]::SetEnvironmentVariable('Path', "$dest;$userPath", 'User')
+}
+$env:Path = "$dest;$env:Path"
+Write-Host "icebox installed to $dest. Run 'icebox' to start."
 ```
 
-Restart the shell, then run `icebox`.
+> First run may trigger SmartScreen — click **More info → Run anyway** (binary is unsigned).
 
-#### Pre-built Binaries (manual)
+##### Pre-built Binaries (manual)
 
 Download from the [latest release](https://github.com/SteelCrab/icebox/releases/latest):
 

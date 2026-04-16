@@ -234,18 +234,6 @@ impl icebox_runtime::ToolExecutor for IceboxToolExecutor {
                     "required": ["memory_id"]
                 }),
             },
-            ToolDefinition {
-                name: "notion_sync".to_string(),
-                description: Some("Icebox built-in tool. Sync kanban tasks to a Notion database. Actions: push (sync tasks), status (show config).".to_string()),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "action": { "type": "string", "description": "Action to perform", "enum": ["push", "status"] },
-                        "page_name": { "type": "string", "description": "Parent page name for initial setup (only needed once)" }
-                    },
-                    "required": ["action"]
-                }),
-            },
         ]
     }
 }

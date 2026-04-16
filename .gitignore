@@ -4,7 +4,7 @@
 .codex/
 .DS_Store
 logs/
-
+.mcp.json
 # AI DOC
 AGENTS.md
 CLAUDE.md

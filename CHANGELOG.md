@@ -23,6 +23,13 @@ Interactive upgrade prompt at startup — no more missed releases.
 - Removed the easily-missed background-thread / status-bar version
   notification — the new blocking prompt fully replaces it.
 
+### 🐛 Bug fixes
+- **Windows: keyboard input registered twice** — Windows console emits both
+  `Press` and `Release` events for every keypress, and the TUI was processing
+  both, causing typed text like `test` to appear as `tteesstt`. Add a
+  `KeyEventKind::Press` guard in `handle_key()`. macOS / Linux unaffected
+  (they only emit `Press` by default).
+
 ### 📦 Install
 
 **macOS (Homebrew)**

@@ -2,7 +2,7 @@ use crate::app::{App, AppMode, DragTarget, EditField, Tab};
 use crate::card;
 use crate::sidebar::TextSelection;
 use crossterm::event::{
-    Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
 use ratatui::layout::Rect;
 
@@ -15,6 +15,13 @@ pub fn handle_event(app: &mut App, event: Event) {
 }
 
 fn handle_key(app: &mut App, key: KeyEvent) {
+    // Windows console emits Press AND Release for every key — without this
+    // guard each character is processed twice. macOS/Linux only emit Press
+    // by default, so this is effectively a Windows-only fix.
+    if key.kind != KeyEventKind::Press {
+        return;
+    }
+
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
         app.should_quit = true;
         return;

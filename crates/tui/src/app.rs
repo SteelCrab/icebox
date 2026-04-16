@@ -123,9 +123,6 @@ pub struct App {
     // Scroll debounce
     pub last_board_scroll: Option<Instant>,
 
-    // Version update check
-    pub update_check_rx: Option<std::sync::mpsc::Receiver<String>>,
-
     // Notion integration
     pub notify_rx: Option<std::sync::mpsc::Receiver<String>>,
     pub notion_pages_cache: Vec<NotionPage>,
@@ -292,7 +289,6 @@ impl App {
             create_priority_idx: 1,
             spinner_tick: 0,
             last_board_scroll: None,
-            update_check_rx: None,
             notify_rx: None,
             notion_pages_cache: Vec::new(),
             notion_busy: None,
@@ -320,7 +316,6 @@ impl App {
             // Poll AI events (non-blocking)
             self.drain_ai_events();
             self.drain_notify_events();
-            self.drain_update_check();
 
             if self.ai_busy || self.notion_busy.is_some() {
                 self.spinner_tick = self.spinner_tick.wrapping_add(1);
@@ -2316,27 +2311,6 @@ impl App {
             &mut self.bottom_chat.messages
         } else {
             &mut self.sidebar.messages
-        }
-    }
-
-    fn drain_update_check(&mut self) {
-        let rx = match self.update_check_rx.take() {
-            Some(rx) => rx,
-            None => return,
-        };
-        match rx.try_recv() {
-            Ok(version) => {
-                if self.status_message.is_none() {
-                    self.set_status(
-                        format!("v{version} available — run `icebox upgrade`"),
-                        false,
-                    );
-                }
-            }
-            Err(std::sync::mpsc::TryRecvError::Empty) => {
-                self.update_check_rx = Some(rx);
-            }
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => {}
         }
     }
 

@@ -466,6 +466,8 @@ fn run_web(args: &[String]) -> Result<()> {
         }
     }
 
+    upgrade::prompt_and_upgrade_if_available()?;
+
     let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
     rt.block_on(icebox_web::serve(path, port))
 }
@@ -670,6 +672,8 @@ fn resolve_workspace(path: &str) -> Result<PathBuf> {
 // ── TUI ──
 
 fn run_tui(workspace: &std::path::Path) -> Result<()> {
+    upgrade::prompt_and_upgrade_if_available()?;
+
     let store = TaskStore::open(workspace)?;
 
     enable_raw_mode()?;
@@ -686,15 +690,6 @@ fn run_tui(workspace: &std::path::Path) -> Result<()> {
 
     let mut app = App::new(store, workspace)?;
     setup_ai_runtime(&mut app, workspace);
-
-    // Background version check — cached 24h; runs once at startup.
-    let (update_tx, update_rx) = std::sync::mpsc::channel();
-    app.update_check_rx = Some(update_rx);
-    std::thread::spawn(move || {
-        if let Some(latest) = upgrade::check_for_update() {
-            let _ = update_tx.send(latest);
-        }
-    });
 
     let result = app.run(&mut terminal);
     restore_terminal()?;

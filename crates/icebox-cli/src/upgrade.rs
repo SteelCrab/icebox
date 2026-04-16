@@ -104,6 +104,57 @@ pub fn check_for_update() -> Option<String> {
     }
 }
 
+// ── Interactive upgrade prompt (called on `icebox` / `icebox web` startup) ──
+
+/// If a newer release is available and we're attached to a TTY, ask the user
+/// whether to upgrade now. On `y`, run `upgrade::run()` and exit so the new
+/// binary is used on the next launch. On `n`, network failure, fresh cache,
+/// or non-interactive stdio, return silently.
+pub fn prompt_and_upgrade_if_available() -> Result<()> {
+    use std::io::{IsTerminal, Write, stdin, stdout};
+
+    let Some(latest) = check_for_update() else {
+        return Ok(());
+    };
+
+    // Skip in non-interactive contexts (piped stdin, MCP stdio, CI, daemon).
+    if !stdin().is_terminal() || !stdout().is_terminal() {
+        return Ok(());
+    }
+
+    let current = env!("CARGO_PKG_VERSION");
+    println!();
+    println!("  Update available: v{current} -> v{latest}");
+    print!("  Upgrade now? [Y/n] ");
+    let _ = stdout().flush();
+
+    let mut input = String::new();
+    if stdin().read_line(&mut input).is_err() {
+        return Ok(());
+    }
+    let yes = matches!(
+        input.trim().to_ascii_lowercase().as_str(),
+        "" | "y" | "yes"
+    );
+    if !yes {
+        return Ok(());
+    }
+
+    match run() {
+        Ok(()) => {
+            println!();
+            println!("  Restart icebox to use v{latest}.");
+            std::process::exit(0);
+        }
+        Err(e) => {
+            eprintln!();
+            eprintln!("  Upgrade failed: {e:#}");
+            eprintln!("  Continuing with v{current}.");
+            Ok(())
+        }
+    }
+}
+
 // ── Self-update (icebox upgrade) ──
 
 pub fn run() -> Result<()> {

@@ -2,6 +2,69 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.5.1
+
+Windows binaries run out-of-the-box; TUI notifies when a newer release ships.
+
+### ✨ Features
+- **Upgrade notification in TUI status bar** — on startup, a background thread
+  checks GitHub for the latest release and surfaces
+  `v<version> available — run \`icebox upgrade\`` when outdated. Result is
+  cached for 24h in `~/.icebox/version_check.json`, so subsequent launches are
+  silent and cheap.
+
+### 🔧 Improvements
+- **Static CRT on Windows** — `x86_64-pc-windows-msvc` and
+  `aarch64-pc-windows-msvc` binaries now bundle the C runtime via
+  `+crt-static`, so they no longer require the Microsoft Visual C++
+  Redistributable. Fixes `STATUS_DLL_NOT_FOUND (0xC0000135)` on fresh Windows
+  installs. Binary grows ~300 KB on Windows only; macOS/Linux sizes unchanged.
+- **Restore `icebox mcp` subcommand** — fixes a regression introduced in
+  v0.3.0 (merge-conflict resolution silently dropped the subcommand
+  dispatch), which broke the Claude Code integration documented in
+  `.mcp.json` for every release since. `icebox mcp` now boots the JSON-RPC
+  stdio server as intended and exposes all 15 built-in tools.
+- **Fix `icebox login` browser launch on Windows** — the OAuth authorize
+  URL contains `&` separators that `cmd.exe` was parsing as command
+  terminators, splitting the URL into broken sub-commands. Wrap the URL
+  in quotes via a raw command line (`start "" "URL"`) so cmd treats it
+  as a single argument.
+
+### 📦 Install
+
+**macOS (Homebrew)**
+```bash
+brew tap SteelCrab/tap && brew install icebox
+```
+
+**Linux**
+```bash
+# x86_64
+curl -LO https://github.com/SteelCrab/icebox/releases/download/v0.5.1/icebox-x86_64-unknown-linux-gnu.tar.gz
+tar xzf icebox-x86_64-unknown-linux-gnu.tar.gz && mv icebox ~/.local/bin/
+
+# aarch64
+curl -LO https://github.com/SteelCrab/icebox/releases/download/v0.5.1/icebox-aarch64-unknown-linux-gnu.tar.gz
+tar xzf icebox-aarch64-unknown-linux-gnu.tar.gz && mv icebox ~/.local/bin/
+```
+
+**Windows (PowerShell)** — see [README](README.md#windows) for details
+```powershell
+$arch = if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'aarch64' } else { 'x86_64' }
+Invoke-WebRequest "https://github.com/SteelCrab/icebox/releases/download/v0.5.1/icebox-$arch-pc-windows-msvc.zip" -OutFile icebox.zip
+Expand-Archive icebox.zip "$env:USERPROFILE\icebox" -Force
+$p = [Environment]::GetEnvironmentVariable('Path','User'); if (($p -split ';') -notcontains "$env:USERPROFILE\icebox") { [Environment]::SetEnvironmentVariable('Path', "$env:USERPROFILE\icebox;$p", 'User') }
+```
+
+### ⬆️ Upgrade
+
+```bash
+icebox upgrade         # self-update (any platform)
+brew upgrade icebox    # macOS Homebrew
+```
+
+**Full Changelog**: https://github.com/SteelCrab/icebox/compare/v0.5.0...v0.5.1
+
 ## v0.5.0
 
 Full Windows architecture support across runtime, tooling, and release pipeline.

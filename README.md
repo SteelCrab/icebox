@@ -38,8 +38,8 @@ A terminal-based kanban board built with Rust, featuring an integrated AI assist
 - **5-Column Kanban Board** — Icebox, Emergency, In Progress, Testing, Complete
 - **AI Sidebar** — Per-task AI conversations with streaming responses
 - **Per-Task Sessions** — Each task maintains its own AI chat history, persisted to disk
-- **Built-in Tools** — AI can run shell commands, read/write files, search code, create/update tasks
-- **Slash Commands** — 18 commands for board management, AI control, and authentication
+- **Built-in Tools** — 15 AI tools: shell, file I/O, code search, kanban ops, memory, Notion sync
+- **Slash Commands** — 19 commands for board management, AI control, auth, and sessions
 - **OAuth PKCE** — Login via claude.ai with automatic browser flow
 - **Mouse Support** — Click to select tasks, drag to scroll, click to focus input
 - **Text Selection** — Drag to select and copy AI responses
@@ -49,6 +49,10 @@ A terminal-based kanban board built with Rust, featuring an integrated AI assist
 - **AI Memory** — Persistent memory across sessions for AI context
 - **Task Storage** — Markdown files with YAML frontmatter (`.icebox/tasks/`)
 - **Web UI** — Responsive local kanban board in the browser via `icebox web`
+- **MCP Server** — `icebox mcp` exposes 12 kanban tools to Claude Code over JSON-RPC stdio
+- **Notion Sync** — `/notion push|pull|status` bidirectional database sync
+- **Cross-Platform** — macOS (arm64), Linux (x86_64/aarch64/armv7, glibc/musl), Windows (x86_64/aarch64)
+- **Self-Update** — `icebox upgrade` pulls the latest release binary
 
 ## Installation
 
@@ -107,6 +111,36 @@ chmod +x icebox
 mv icebox ~/.local/bin/    # or any directory in $PATH
 ```
 
+### Windows
+
+#### Quick Install (PowerShell)
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'aarch64' } else { 'x86_64' }
+$asset = "icebox-$arch-pc-windows-msvc.zip"
+$dest = "$env:USERPROFILE\icebox"
+Invoke-WebRequest "https://github.com/SteelCrab/icebox/releases/latest/download/$asset" -OutFile "$env:TEMP\$asset"
+Expand-Archive "$env:TEMP\$asset" -DestinationPath $dest -Force
+[Environment]::SetEnvironmentVariable('Path', "$dest;" + [Environment]::GetEnvironmentVariable('Path','User'), 'User')
+```
+
+Restart the shell, then run `icebox`.
+
+#### Pre-built Binaries (manual)
+
+Download from the [latest release](https://github.com/SteelCrab/icebox/releases/latest):
+
+| Architecture | Asset |
+|---|---|
+| x86_64 | `icebox-x86_64-pc-windows-msvc.zip` |
+| aarch64 (ARM64) | `icebox-aarch64-pc-windows-msvc.zip` |
+
+```powershell
+Expand-Archive icebox-x86_64-pc-windows-msvc.zip -DestinationPath $env:USERPROFILE\icebox
+# Add %USERPROFILE%\icebox to PATH (System Properties → Environment Variables)
+```
+
 ### From Source (any OS)
 
 #### Cargo Install
@@ -154,6 +188,20 @@ icebox web --port 8080                # specify port
 ```
 
 See the **[Web UI Guide](docs/web.md)** for details.
+
+### All-in-One Setup
+
+```bash
+icebox init --all        # ★ Recommended — creates .icebox/, .mcp.json, Claude Code memory
+```
+
+Prompts Y/n for each step and prints the exact memory content before writing.
+
+### Self-Update
+
+```bash
+icebox upgrade           # Download and install the latest release binary
+```
 
 ### Authentication
 
@@ -233,6 +281,7 @@ icebox whoami          # Check auth status
 | | `/search <query>` | Search tasks |
 | | `/export` | Export board as markdown |
 | | `/diff` | Show git diff |
+| | `/notion [push \| pull \| status \| reset]` | Notion DB sync |
 | | `/swimlane [name \| clear]` | Set swimlane on task or list swimlanes |
 | **AI** | `/help` | Command list |
 | | `/status` | Session status |
@@ -240,8 +289,8 @@ icebox whoami          # Check auth status
 | | `/clear` | Clear conversation |
 | | `/compact` | Compress conversation |
 | | `/model [name]` | Switch model |
-| | `/remember <text>` | Save memory for AI context |
-| | `/memory` | Memory management view |
+| | `/remember <text>` (alias `/rem`) | Save memory for AI context |
+| | `/memory` (alias `/mem`) | Memory management view |
 | **Auth** | `/login` | OAuth login |
 | | `/logout` | Logout |
 | **Session** | `/resume [id]` | Resume session |
@@ -302,13 +351,13 @@ See the **[Web UI Guide](docs/web.md)** for options, responsive layout details, 
 
 ```
 crates/
-  icebox-cli/   # Main binary — CLI subcommands, TUI runtime
+  icebox-cli/   # Main binary — CLI subcommands, TUI runtime, MCP server
   tui/          # TUI — app, board, column, card, sidebar, input, layout, theme
   task/         # Domain — Task, Column, Priority, frontmatter, TaskStore
   api/          # API — AnthropicClient, SSE streaming, AuthMethod, retry
   runtime/      # Runtime — ConversationRuntime, Session, OAuth PKCE, UsageTracker
-  tools/        # 12 tools — bash, read/write_file, glob/grep_search, kanban (list/create/update/move), memory
-  commands/     # 18 slash commands (Board, AI, Auth, Session)
+  tools/        # 15 tools — bash, file I/O, search, kanban, memory, Notion sync
+  commands/     # 19 slash commands (Board, AI, Auth, Session)
   icebox-web/   # Web UI library — Axum HTTP server (linked into icebox binary via `icebox web`)
 ```
 
@@ -316,27 +365,83 @@ crates/
 
 | Tool | Description |
 |------|-------------|
-| `bash` | Execute shell commands |
+| `bash` | Execute shell commands (`sh -c` on Unix, `cmd /C` on Windows) |
 | `read_file` | Read file contents |
-| `write_file` | Write/create files |
+| `write_file` | Write/create files (auto-mkdir on missing parents) |
 | `glob_search` | Find files by glob pattern |
 | `grep_search` | Search file contents with regex |
 | `list_tasks` | List all kanban tasks by column |
+| `list_swimlanes` | List all swimlanes in the workspace |
+| `filter_tasks` | Filter tasks by column, priority, swimlane, tag, or date |
 | `create_task` | Create a new task |
 | `update_task` | Update existing task (title, priority, tags, swimlane, dates, body) |
 | `move_task` | Move task to another column |
-| `save_memory` | Save persistent memory for AI context |
+| `notion_sync` | Push or pull tasks to/from a Notion database |
+| `save_memory` | Save persistent memory for AI context (global or per-task) |
 | `list_memories` | List saved memories |
 | `delete_memory` | Delete a memory entry |
+
+## MCP Server
+
+`icebox mcp` runs a JSON-RPC 2.0 MCP server over stdio, exposing 12 kanban tools to Claude Code and other MCP clients.
+
+Project-local config (`.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "icebox": {
+      "command": "icebox",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Global config (`~/.claude/settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "icebox": {
+      "command": "icebox",
+      "args": ["mcp", "--workspace", "/path/to/project"]
+    }
+  }
+}
+```
+
+See the **[MCP Guide](docs/mcp.md)** for the full tool list and protocol details.
+
+## Notion Sync
+
+Bidirectional sync between `.icebox/tasks/` and a Notion database.
+
+```bash
+export NOTION_API_KEY=secret_...
+icebox notion            # Setup guide
+```
+
+Inside the TUI:
+
+```
+/notion push             # Local → Notion
+/notion pull             # Notion → local (safe — won't delete local tasks)
+/notion status           # Show sync state
+/notion reset            # Forget the configured database
+```
+
+See the **[Notion Guide](docs/notion.md)** for setup and field mapping.
 
 ## Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ANTHROPIC_API_KEY` | API key (recommended) | — |
+| `ANTHROPIC_API_KEY` | API key (recommended, highest priority) | — |
 | `ANTHROPIC_AUTH_TOKEN` | Bearer token | — |
 | `ANTHROPIC_BASE_URL` | API URL | `https://api.anthropic.com` |
-| `ANTHROPIC_MODEL` | Model | `claude-sonnet-4-20250514` |
+| `ANTHROPIC_MODEL` | Model (OAuth default: `claude-haiku-4-5-20251001`) | auth-aware |
+| `NOTION_API_KEY` | Notion integration token (for `/notion` sync) | — |
 | `ICEBOX_CONFIG_HOME` | Config directory | `~/.icebox` |
 
 ## License

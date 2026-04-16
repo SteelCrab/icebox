@@ -259,6 +259,14 @@ struct BashInput {
 
 fn execute_bash(input: &str) -> Result<String> {
     let parsed: BashInput = serde_json::from_str(input).context("invalid bash input")?;
+
+    #[cfg(windows)]
+    let output = std::process::Command::new("cmd")
+        .args(["/C", &parsed.command])
+        .output()
+        .context("failed to execute command")?;
+
+    #[cfg(not(windows))]
     let output = std::process::Command::new("sh")
         .arg("-c")
         .arg(&parsed.command)

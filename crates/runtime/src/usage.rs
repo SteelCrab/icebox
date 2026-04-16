@@ -45,8 +45,8 @@ pub const MODELS: &[ModelInfo] = &[
     ModelInfo {
         alias: "opus",
         display_name: "Opus (1M context)",
-        description: "Opus 4.6 with 1M context · Most capable for complex work",
-        id: "claude-opus-4-6",
+        description: "Opus 4.7 with 1M context · Most capable for complex work",
+        id: "claude-opus-4-7",
         max_tokens: 128_000,
         context_window: "1M",
         input_per_million: 15.0,

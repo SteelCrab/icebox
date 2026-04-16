@@ -23,7 +23,7 @@ pub struct NotionConfig {
 /// User preferences persisted across sessions.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct IceboxConfig {
-    /// Last-used model ID (e.g., "claude-opus-4-6").
+    /// Last-used model ID (e.g., "claude-opus-4-7").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     /// Notion integration settings.

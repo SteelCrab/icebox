@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.5.4
+
+Claude Opus 4.7 support.
+
+### ✨ Features
+- **Opus 4.7 (1M context) support** — `claude-opus-4-7` is now selectable from the TUI `/model` modal and the web chat dropdown; Opus 4.6 is removed and the `opus` alias transparently resolves saved `claude-opus-4-6` configs to 4.7.
+
 ## v0.5.3
 
 Hotfix: `icebox upgrade` was unresponsive on Windows.

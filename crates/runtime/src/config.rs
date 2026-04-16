@@ -47,7 +47,7 @@ impl IceboxConfig {
             return PathBuf::from(xdg).join("icebox").join("config.json");
         }
 
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+        let home = resolve_home_dir();
         PathBuf::from(home).join(".icebox").join("config.json")
     }
 
@@ -109,4 +109,17 @@ impl IceboxConfig {
     pub fn notion_config() -> Option<NotionConfig> {
         Self::load().notion
     }
+}
+
+/// Resolve home directory cross-platform (HOME on Unix, USERPROFILE on Windows).
+pub fn resolve_home_dir() -> String {
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| {
+            if cfg!(windows) {
+                r"C:\Users\Default".to_string()
+            } else {
+                "/tmp".to_string()
+            }
+        })
 }

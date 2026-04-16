@@ -51,7 +51,6 @@ impl icebox_runtime::ToolExecutor for IceboxToolExecutor {
             "save_memory" => execute_save_memory(input, &self.memory_store),
             "list_memories" => execute_list_memories(&self.memory_store),
             "delete_memory" => execute_delete_memory(input, &self.memory_store),
-            "notion_sync" => execute_notion_sync(input, &self.store),
             _ => Ok(format!("Unknown tool: {tool_name}")),
         }
     }
@@ -235,18 +234,6 @@ impl icebox_runtime::ToolExecutor for IceboxToolExecutor {
                     "required": ["memory_id"]
                 }),
             },
-            ToolDefinition {
-                name: "notion_sync".to_string(),
-                description: Some("Icebox built-in tool. Sync kanban tasks to a Notion database. Actions: push (sync tasks), status (show config).".to_string()),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "action": { "type": "string", "description": "Action to perform", "enum": ["push", "status"] },
-                        "page_name": { "type": "string", "description": "Parent page name for initial setup (only needed once)" }
-                    },
-                    "required": ["action"]
-                }),
-            },
         ]
     }
 }
@@ -260,6 +247,14 @@ struct BashInput {
 
 fn execute_bash(input: &str) -> Result<String> {
     let parsed: BashInput = serde_json::from_str(input).context("invalid bash input")?;
+
+    #[cfg(windows)]
+    let output = std::process::Command::new("cmd")
+        .args(["/C", &parsed.command])
+        .output()
+        .context("failed to execute command")?;
+
+    #[cfg(not(windows))]
     let output = std::process::Command::new("sh")
         .arg("-c")
         .arg(&parsed.command)

@@ -106,6 +106,74 @@ chmod +x icebox
 mv icebox ~/.local/bin/    # o cualquier directorio en $PATH
 ```
 
+### Windows
+
+> 💡 **Se recomienda WSL.** La herramienta `bash` de la IA de icebox invoca con frecuencia comandos Unix como `grep`/`sed`/`awk`/`find`, que en Windows nativo recurren a `cmd /C` y en su mayoría no funcionan. Con WSL el binario de Linux se ejecuta tal cual y los callbacks OAuth y el manejo de rutas se mantienen estables.
+
+#### Opción A: WSL (recomendado)
+
+**1. Instalar WSL** (Windows 10 2004+ / Windows 11)
+
+Abre PowerShell **como Administrador** y ejecuta:
+
+```powershell
+wsl --install
+```
+
+La distribución Ubuntu por defecto se instala automáticamente. Tras reiniciar, configura un usuario y contraseña. Si WSL ya está instalado, actualízalo con `wsl --update`.
+
+**2. Instalar icebox dentro de WSL**
+
+Abre la terminal WSL (Ubuntu) y sigue la [instalación rápida de Linux](#instalación-rápida-1):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SteelCrab/icebox/main/install.sh | bash
+```
+
+**3. Recomendación de directorio de trabajo**
+
+Para mejor rendimiento, trabaja dentro del sistema de archivos de WSL (p. ej. `~/projects/...`). Los archivos bajo `/mnt/c/...` (disco de Windows) tienen E/S lenta y degradan la respuesta del TUI.
+
+**4. Usa Windows Terminal**
+
+[Windows Terminal](https://aka.ms/terminal) ofrece mejor soporte de color, Unicode y ratón para TUIs que la consola heredada.
+
+#### Opción B: Windows nativo (PowerShell)
+
+Úsalo solo cuando WSL no esté disponible (p. ej. política corporativa). Algunas invocaciones de la herramienta `bash` pueden no funcionar.
+
+```powershell
+$ErrorActionPreference = 'Stop'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$arch = if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'aarch64' } else { 'x86_64' }
+$asset = "icebox-$arch-pc-windows-msvc.zip"
+$dest = "$env:USERPROFILE\icebox"
+Invoke-WebRequest "https://github.com/SteelCrab/icebox/releases/latest/download/$asset" -OutFile "$env:TEMP\$asset"
+Expand-Archive "$env:TEMP\$asset" -DestinationPath $dest -Force
+$userPath = [Environment]::GetEnvironmentVariable('Path','User')
+if (($userPath -split ';') -notcontains $dest) {
+    [Environment]::SetEnvironmentVariable('Path', "$dest;$userPath", 'User')
+}
+$env:Path = "$dest;$env:Path"
+Write-Host "icebox installed to $dest. Run 'icebox' to start."
+```
+
+> La primera ejecución puede activar SmartScreen — haz clic en **Más información → Ejecutar de todos modos** (binario sin firmar).
+
+##### Binarios precompilados (manual)
+
+Descarga desde la [última versión](https://github.com/SteelCrab/icebox/releases/latest):
+
+| Arquitectura | Archivo |
+|---|---|
+| x86_64 | `icebox-x86_64-pc-windows-msvc.zip` |
+| aarch64 (ARM64) | `icebox-aarch64-pc-windows-msvc.zip` |
+
+```powershell
+Expand-Archive icebox-x86_64-pc-windows-msvc.zip -DestinationPath $env:USERPROFILE\icebox
+# Añade %USERPROFILE%\icebox al PATH (Propiedades del sistema → Variables de entorno)
+```
+
 ### Desde fuente (cualquier OS)
 
 #### Instalar con Cargo

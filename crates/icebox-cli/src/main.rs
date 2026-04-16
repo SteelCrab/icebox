@@ -14,6 +14,8 @@ use std::panic;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+mod upgrade;
+
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
 
@@ -23,8 +25,9 @@ fn main() -> Result<()> {
         Some("logout") => return run_logout(),
         Some("whoami") => return run_whoami(),
         Some("test-api") => return run_test_api(),
-        Some("upgrade") => return run_upgrade(),
         Some("init") => return run_init(&args),
+        Some("web") => return run_web(&args),
+        Some("upgrade") => return upgrade::run(),
         Some("help") | Some("--help") | Some("-h") => {
             print_help();
             return Ok(());
@@ -53,10 +56,11 @@ fn print_help() {
     println!("  icebox [path]         Launch the TUI kanban board at the given path");
     println!("  icebox init           Initialize .icebox/ workspace (current directory)");
     println!("  icebox init [path]    Initialize .icebox/ workspace at the given path");
+    println!("  icebox init --all     ★ Recommended — also sets up .mcp.json + Claude Code memory");
     println!("  icebox login          Authenticate via OAuth (opens browser)");
     println!("  icebox logout         Clear saved credentials");
     println!("  icebox whoami         Show current authentication status");
-    println!("  icebox upgrade        Check for updates and upgrade to latest version");
+    println!("  icebox upgrade        Self-update from latest GitHub release");
     println!("  icebox help           Show this help message");
     println!();
     println!("AUTHENTICATION (recommended: API key):");
@@ -403,37 +407,224 @@ fn run_test_api() -> Result<()> {
     Ok(())
 }
 
+// ── Web ──
+
+fn print_web_help() {
+    println!("icebox web — Launch the local kanban web UI");
+    println!();
+    println!("USAGE:");
+    println!("  icebox web [--path <dir>] [--port <port>]");
+    println!();
+    println!("OPTIONS:");
+    println!("  --path <dir>   Workspace directory containing .icebox/ (default: .)");
+    println!("  --port <port>  Port to listen on (default: 3000)");
+    println!("  -h, --help     Show this help message");
+}
+
+fn run_web(args: &[String]) -> Result<()> {
+    let mut path = PathBuf::from(".");
+    let mut port: u16 = 3000;
+
+    let mut iter = args.iter().skip(2);
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--path" => {
+                let v = iter.next().context("--path requires a value")?;
+                path = PathBuf::from(v);
+            }
+            "--port" => {
+                let v = iter.next().context("--port requires a value")?;
+                port = v.parse().with_context(|| format!("invalid port: {v}"))?;
+            }
+            "-h" | "--help" => {
+                print_web_help();
+                return Ok(());
+            }
+            other => anyhow::bail!("unknown argument for `icebox web`: {other}"),
+        }
+    }
+
+    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
+    rt.block_on(icebox_web::serve(path, port))
+}
+
 // ── Init ──
 
 fn run_init(args: &[String]) -> Result<()> {
-    let workspace = match args.get(2) {
+    let all_flag = args.iter().skip(2).any(|a| a == "--all");
+    let path_arg = args.iter().skip(2).find(|a| !a.starts_with("--"));
+
+    let workspace = match path_arg {
         Some(path) => {
             let p = PathBuf::from(path);
             if p.is_absolute() {
                 p
             } else {
-                env::current_dir()
-                    .context("failed to get current directory")?
-                    .join(p)
+                env::current_dir()?.join(p)
             }
         }
-        None => env::current_dir().context("failed to get current directory")?,
+        None => env::current_dir()?,
     };
 
     if !workspace.is_dir() {
-        fs::create_dir_all(&workspace)
-            .with_context(|| format!("failed to create directory: {}", workspace.display()))?;
+        fs::create_dir_all(&workspace)?;
     }
 
     let fresh = icebox_task::init_workspace(&workspace)?;
-    let icebox_dir = workspace.join(".icebox");
+    report(".icebox/", fresh);
 
-    if fresh {
-        println!("Initialized icebox workspace at {}", icebox_dir.display());
-    } else {
-        println!("Icebox workspace already exists at {}", icebox_dir.display());
+    if all_flag {
+        setup_mcp_config(&workspace)?;
+        setup_claude_memory(&workspace)?;
     }
 
+    Ok(())
+}
+
+fn report(target: &str, created: bool) {
+    let status = if created { "created" } else { "exists " };
+    println!("  {status}  {target}");
+}
+
+fn prompt_yes_no(question: &str, default_yes: bool) -> Result<bool> {
+    use std::io::Write;
+    let hint = if default_yes { "[Y/n]" } else { "[y/N]" };
+    print!("  {question} {hint} ");
+    io::stdout().flush().ok();
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    Ok(match input.trim().to_lowercase().as_str() {
+        "y" | "yes" => true,
+        "n" | "no" => false,
+        _ => default_yes,
+    })
+}
+
+fn setup_mcp_config(workspace: &std::path::Path) -> Result<()> {
+    let path = workspace.join(".mcp.json");
+    if path.exists() {
+        report(".mcp.json", false);
+        return Ok(());
+    }
+
+    let content = r#"{
+  "mcpServers": {
+    "icebox": {
+      "command": "icebox",
+      "args": ["mcp"]
+    }
+  }
+}
+"#;
+
+    // Preview what will be written and why, so the user can decide informed.
+    println!();
+    println!("  About .mcp.json:");
+    println!("    An MCP (Model Context Protocol) config that lets Claude Code talk to");
+    println!("    this project's icebox board. With it, Claude Code can list / create /");
+    println!("    move tasks directly via `mcp__icebox__*` tools.");
+    println!();
+    println!("    file:  {}", path.display());
+    println!();
+    for line in content.lines() {
+        println!("    │ {line}");
+    }
+    println!();
+
+    if !prompt_yes_no("Create .mcp.json?", true)? {
+        return Ok(());
+    }
+
+    fs::write(&path, content)?;
+    report(".mcp.json", true);
+    Ok(())
+}
+
+fn setup_claude_memory(workspace: &std::path::Path) -> Result<()> {
+    let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) else {
+        return Ok(());
+    };
+    if home.is_empty() {
+        return Ok(());
+    }
+
+    let abs = workspace
+        .canonicalize()
+        .unwrap_or_else(|_| workspace.to_path_buf());
+    let mut slug = abs.to_string_lossy().replace(std::path::MAIN_SEPARATOR, "-");
+    if !slug.starts_with('-') {
+        slug = format!("-{slug}");
+    }
+
+    let memory_dir = PathBuf::from(&home)
+        .join(".claude")
+        .join("projects")
+        .join(&slug)
+        .join("memory");
+    let memory_file = memory_dir.join("project_icebox_workflow.md");
+    let index_file = memory_dir.join("MEMORY.md");
+    let label = "claude memory";
+
+    if memory_file.exists() {
+        report(label, false);
+        return Ok(());
+    }
+
+    let memory_content = r#"---
+name: Icebox kanban workflow — primary task tracker
+description: This project uses icebox as its primary task tracker. All work flows through the kanban board via mcp__icebox__ tools — check the board first, create a task, move through columns, never skip.
+type: project
+---
+
+This project uses [icebox](https://github.com/SteelCrab/icebox) as its **primary task tracking system**. All task-related work MUST flow through the kanban board via MCP tools.
+
+**Core workflow:**
+1. Check the board first with `mcp__icebox__list_tasks`
+2. Create a task with `mcp__icebox__create_task` before starting any work
+3. Move to `inprogress` with `mcp__icebox__move_task` when starting
+4. Update progress notes in task body via `mcp__icebox__update_task`
+5. Move to `testing` when written, `complete` when verified
+6. Never skip the board — even small changes get a task
+
+**Board:** columns are `icebox` / `emergency` / `inprogress` / `testing` / `complete`. Priorities: `low` / `medium` / `high` / `critical`. Optional swimlanes group tasks (e.g., `backend`, `frontend`).
+
+**Why:** User wants icebox to drive all flow control — task ordering, prioritization, and progress visibility. Task body is the source of truth for decisions, references (commits, PRs), and progress notes.
+
+**How to apply:** When the user requests any work (feature, bug, refactor, investigation), do not start coding until a task exists and is in `inprogress`. Prefer MCP tools over direct file edits in `.icebox/tasks/`. If asked "what should I work on?", check the board — don't ask.
+"#;
+
+    // Preview what will be added and why, so the user can decide informed.
+    println!();
+    println!("  About Claude Code memory entry:");
+    println!("    A project-scoped memory file that teaches Claude Code to treat icebox");
+    println!("    as the primary task tracker for this project — check the board, create");
+    println!("    a task, update progress, and never skip it. Loaded automatically by");
+    println!("    Claude Code when you work in this directory.");
+    println!();
+    println!("    file:  {}", memory_file.display());
+    println!();
+    for line in memory_content.lines() {
+        println!("    │ {line}");
+    }
+    println!();
+
+    if !prompt_yes_no("Add icebox workflow to Claude Code memory?", true)? {
+        return Ok(());
+    }
+
+    fs::create_dir_all(&memory_dir)?;
+
+    fs::write(&memory_file, memory_content)?;
+
+    let entry = "- [Icebox kanban workflow](project_icebox_workflow.md) — primary task tracker, all work flows through the board via mcp__icebox__ tools\n";
+    let idx = fs::read_to_string(&index_file).unwrap_or_default();
+    if !idx.contains("project_icebox_workflow.md") {
+        let sep = if idx.is_empty() || idx.ends_with('\n') { "" } else { "\n" };
+        fs::write(&index_file, format!("{idx}{sep}{entry}"))?;
+    }
+
+    report(label, true);
     Ok(())
 }
 
@@ -706,216 +897,6 @@ fn mask_secret(secret: &str) -> String {
         .rev()
         .collect();
     format!("{prefix}...{suffix}")
-}
-
-// ── Upgrade ──
-
-const GITHUB_REPO: &str = "SteelCrab/icebox";
-
-fn current_target() -> Option<&'static str> {
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    { return Some("aarch64-apple-darwin"); }
-    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-    { return Some("x86_64-apple-darwin"); }
-    #[cfg(all(target_os = "linux", target_arch = "x86_64", not(target_env = "musl")))]
-    { return Some("x86_64-unknown-linux-gnu"); }
-    #[cfg(all(target_os = "linux", target_arch = "aarch64", not(target_env = "musl")))]
-    { return Some("aarch64-unknown-linux-gnu"); }
-    #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "musl"))]
-    { return Some("x86_64-unknown-linux-musl"); }
-    #[cfg(all(target_os = "linux", target_arch = "aarch64", target_env = "musl"))]
-    { return Some("aarch64-unknown-linux-musl"); }
-    #[cfg(all(target_os = "linux", target_arch = "arm"))]
-    { return Some("armv7-unknown-linux-gnueabihf"); }
-    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-    { return Some("x86_64-pc-windows-msvc"); }
-    #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
-    { return Some("aarch64-pc-windows-msvc"); }
-    #[allow(unreachable_code)]
-    None
-}
-
-/// Archive file extension for the current platform's release asset.
-fn archive_ext() -> &'static str {
-    if cfg!(windows) { "zip" } else { "tar.gz" }
-}
-
-/// Expected binary filename inside the release archive.
-fn binary_name() -> &'static str {
-    if cfg!(windows) { "icebox.exe" } else { "icebox" }
-}
-
-/// Extract the downloaded archive bytes into `dest` directory.
-#[cfg(not(windows))]
-fn extract_archive(bytes: &[u8], dest: &std::path::Path) -> Result<()> {
-    let decoder = flate2::read::GzDecoder::new(bytes);
-    let mut archive = tar::Archive::new(decoder);
-    archive.unpack(dest).context("failed to extract tar.gz archive")?;
-    Ok(())
-}
-
-#[cfg(windows)]
-fn extract_archive(bytes: &[u8], dest: &std::path::Path) -> Result<()> {
-    let reader = std::io::Cursor::new(bytes);
-    let mut archive = zip::ZipArchive::new(reader).context("failed to open zip archive")?;
-    archive.extract(dest).context("failed to extract zip archive")?;
-    Ok(())
-}
-
-fn is_newer(latest: &str, current: &str) -> bool {
-    let parse = |v: &str| -> Vec<u32> {
-        v.split('.').filter_map(|p| p.parse().ok()).collect()
-    };
-    parse(latest) > parse(current)
-}
-
-fn run_upgrade() -> Result<()> {
-    let current = env!("CARGO_PKG_VERSION");
-    let target = current_target().context(
-        "unsupported platform for auto-upgrade. Download manually from: \
-         https://github.com/SteelCrab/icebox/releases",
-    )?;
-
-    println!("Icebox Upgrade");
-    println!("\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}");
-    println!("  Current: v{current}");
-    println!("  Target:  {target}");
-    println!();
-
-    // Homebrew detection (Unix only): warn and exit
-    let exe_path = env::current_exe().context("failed to detect current executable path")?;
-    #[cfg(not(windows))]
-    {
-        let exe_str = exe_path.display().to_string();
-        if exe_str.contains("/Cellar/") || exe_str.contains("/homebrew/") {
-            println!("  Homebrew installation detected.");
-            println!("  Use: brew upgrade icebox");
-            return Ok(());
-        }
-    }
-
-    // Fetch latest release from GitHub API
-    println!("  Checking for updates...");
-    let client = reqwest::blocking::Client::builder()
-        .user_agent(format!("icebox/{current}"))
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .context("failed to create HTTP client")?;
-
-    let response = client
-        .get(format!(
-            "https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-        ))
-        .send()
-        .context("failed to connect to GitHub. Check your network.")?;
-
-    if !response.status().is_success() {
-        anyhow::bail!(
-            "GitHub API returned {}. Check your network or try again later.",
-            response.status()
-        );
-    }
-
-    let release: serde_json::Value = response
-        .json()
-        .context("failed to parse GitHub release response")?;
-    let tag = release["tag_name"]
-        .as_str()
-        .context("no tag_name in release response")?;
-    let latest = tag.strip_prefix('v').unwrap_or(tag);
-
-    if !is_newer(latest, current) {
-        println!("  Already up to date (v{current}).");
-        return Ok(());
-    }
-
-    println!("  Latest:  v{latest}");
-    println!();
-
-    // Download binary archive
-    let asset = format!("icebox-{target}.{}", archive_ext());
-    let url = format!("https://github.com/{GITHUB_REPO}/releases/download/{tag}/{asset}");
-    println!("  Downloading {asset}...");
-
-    let dl_response = client
-        .get(&url)
-        .send()
-        .with_context(|| format!("failed to download {url}"))?;
-
-    if dl_response.status().is_client_error() {
-        anyhow::bail!("No release binary found for {target}. Asset: {asset}");
-    }
-    if !dl_response.status().is_success() {
-        anyhow::bail!("Download failed with status {}", dl_response.status());
-    }
-
-    let bytes = dl_response
-        .bytes()
-        .context("failed to read download response")?;
-    let size_mb = bytes.len() as f64 / 1_048_576.0;
-    println!("  Downloaded {size_mb:.1} MB");
-
-    // Extract binary from archive
-    println!("  Extracting...");
-    let tmp_dir = tempdir().context("failed to create temp directory")?;
-    extract_archive(&bytes, &tmp_dir)?;
-
-    let new_binary = tmp_dir.join(binary_name());
-    if !new_binary.exists() {
-        anyhow::bail!("archive did not contain '{}' binary", binary_name());
-    }
-
-    // Replace current binary
-    println!("  Installing...");
-
-    // Set executable permission (Unix only — Windows uses file extension for this)
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = std::fs::Permissions::from_mode(0o755);
-        std::fs::set_permissions(&new_binary, perms)
-            .context("failed to set executable permission")?;
-    }
-
-    // Atomic replace: rename current exe to .old, move new exe in place.
-    // Windows can't overwrite a running .exe but CAN rename it, so this works
-    // on all platforms. The .old file is left for OS to clean up on next run.
-    let backup = exe_path.with_extension("old");
-    // Remove any stale .old from previous upgrade (ignore error — may not exist)
-    let _ = fs::remove_file(&backup);
-    if fs::rename(&exe_path, &backup).is_ok() {
-        if let Err(e) = fs::rename(&new_binary, &exe_path) {
-            // Restore backup on failure
-            let _ = fs::rename(&backup, &exe_path);
-            return Err(e).context("failed to install new binary");
-        }
-        // Try to clean up backup. On Windows this may fail if the old exe is
-        // still in use — that's fine, it will be cleaned up next time.
-        let _ = fs::remove_file(&backup);
-    } else {
-        // rename failed (cross-device on Unix): copy instead
-        let hint = if cfg!(windows) {
-            "failed to replace binary. Run as Administrator."
-        } else {
-            "failed to replace binary. Permission denied? Try: sudo icebox upgrade"
-        };
-        fs::copy(&new_binary, &exe_path).context(hint)?;
-    }
-
-    // Cleanup
-    let _ = fs::remove_dir_all(&tmp_dir);
-
-    println!();
-    println!("  \u{2713} Upgraded to v{latest}!");
-    println!("  Restart icebox to use the new version.");
-    Ok(())
-}
-
-fn tempdir() -> Result<PathBuf> {
-    let dir = env::temp_dir().join(format!("icebox-upgrade-{}", std::process::id()));
-    fs::create_dir_all(&dir)
-        .with_context(|| format!("failed to create temp dir: {}", dir.display()))?;
-    Ok(dir)
 }
 
 fn restore_terminal() -> Result<()> {

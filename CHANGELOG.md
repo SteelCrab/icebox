@@ -29,6 +29,13 @@ Interactive upgrade prompt at startup — no more missed releases.
   both, causing typed text like `test` to appear as `tteesstt`. Add a
   `KeyEventKind::Press` guard in `handle_key()`. macOS / Linux unaffected
   (they only emit `Press` by default).
+- **Windows: `icebox init --all` failed with `os error 123`** — `canonicalize()`
+  on Windows returns verbatim paths like `\\?\C:\Users\pista\abc`, and the
+  slug used for `~/.claude/projects/<slug>/` retained the illegal `\\?\`
+  prefix and drive-letter `:`, producing names like `--?-C:-Users-pista-abc`
+  that NTFS rejects with `ERROR_INVALID_NAME`. Strip the verbatim prefix and
+  replace every illegal NTFS char (`< > : " / \ | ? *`) with `-`, then
+  collapse consecutive dashes.
 
 ### 📦 Install
 

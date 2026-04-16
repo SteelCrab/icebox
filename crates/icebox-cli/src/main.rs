@@ -576,10 +576,7 @@ fn setup_claude_memory(workspace: &std::path::Path) -> Result<()> {
     let abs = workspace
         .canonicalize()
         .unwrap_or_else(|_| workspace.to_path_buf());
-    let mut slug = abs.to_string_lossy().replace(std::path::MAIN_SEPARATOR, "-");
-    if !slug.starts_with('-') {
-        slug = format!("-{slug}");
-    }
+    let slug = path_to_slug(&abs.to_string_lossy());
 
     let memory_dir = PathBuf::from(&home)
         .join(".claude")
@@ -650,6 +647,40 @@ This project uses [icebox](https://github.com/SteelCrab/icebox) as its **primary
 
     report(label, true);
     Ok(())
+}
+
+/// Slugify an absolute filesystem path for use as a Claude Code project
+/// directory name under `~/.claude/projects/`. On Windows, `canonicalize()`
+/// yields verbatim paths like `\\?\C:\Users\pista\abc`. The leading `\\?\`
+/// (and `\\?\UNC\`) plus the drive-letter `:` are illegal in NTFS filenames,
+/// so we strip the prefix and replace every path-component / illegal char
+/// with `-`.
+fn path_to_slug(path: &str) -> String {
+    let stripped = path
+        .strip_prefix(r"\\?\UNC\")
+        .or_else(|| path.strip_prefix(r"\\?\"))
+        .unwrap_or(path);
+    let mut out = String::with_capacity(stripped.len() + 1);
+    let mut prev_dash = false;
+    for c in stripped.chars() {
+        let mapped = match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '-',
+            _ => c,
+        };
+        if mapped == '-' {
+            if !prev_dash {
+                out.push('-');
+                prev_dash = true;
+            }
+        } else {
+            out.push(mapped);
+            prev_dash = false;
+        }
+    }
+    if !out.starts_with('-') {
+        out.insert(0, '-');
+    }
+    out
 }
 
 fn resolve_workspace(path: &str) -> Result<PathBuf> {
@@ -933,4 +964,45 @@ fn restore_terminal() -> Result<()> {
     print!("\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l");
     let _ = io::Write::flush(&mut io::stdout());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::path_to_slug;
+
+    #[test]
+    fn unix_absolute_path() {
+        assert_eq!(path_to_slug("/Users/pista/abc"), "-Users-pista-abc");
+    }
+
+    #[test]
+    fn windows_verbatim_path_strips_prefix_and_drive_colon() {
+        // canonicalize() on Windows returns \\?\C:\... — the prefix and drive
+        // colon are both illegal in NTFS filenames.
+        assert_eq!(
+            path_to_slug(r"\\?\C:\Users\pista\abc"),
+            "-C-Users-pista-abc"
+        );
+    }
+
+    #[test]
+    fn windows_unc_verbatim_path_strips_unc_prefix() {
+        assert_eq!(
+            path_to_slug(r"\\?\UNC\server\share\proj"),
+            "-server-share-proj"
+        );
+    }
+
+    #[test]
+    fn windows_plain_path_replaces_separators_and_drive_colon() {
+        assert_eq!(
+            path_to_slug(r"C:\Users\pista\abc"),
+            "-C-Users-pista-abc"
+        );
+    }
+
+    #[test]
+    fn other_illegal_chars_are_replaced() {
+        assert_eq!(path_to_slug(r"/a*b?c<d>e|f"), "-a-b-c-d-e-f");
+    }
 }

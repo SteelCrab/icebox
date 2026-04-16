@@ -106,6 +106,74 @@ chmod +x icebox
 mv icebox ~/.local/bin/    # 或 $PATH 中的任何目录
 ```
 
+### Windows
+
+> 💡 **推荐使用 WSL。** icebox 的 AI `bash` 工具会频繁调用 `grep`/`sed`/`awk`/`find` 等 Unix 命令，在 Windows 原生环境下会回退到 `cmd /C`，大多数命令无法工作。使用 WSL 时 Linux 二进制可直接运行，OAuth 回调与路径处理也更稳定。
+
+#### 选项 A: WSL (推荐)
+
+**1. 安装 WSL** (Windows 10 2004+ / Windows 11)
+
+以**管理员身份**打开 PowerShell：
+
+```powershell
+wsl --install
+```
+
+默认 Ubuntu 发行版会自动安装。重启后设置用户名和密码。如果已经安装了 WSL，使用 `wsl --update` 更新到最新。
+
+**2. 在 WSL 中安装 icebox**
+
+打开 WSL 终端 (Ubuntu)，按 [Linux 快速安装](#快速安装) 操作：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SteelCrab/icebox/main/install.sh | bash
+```
+
+**3. 工作目录建议**
+
+为了性能，请在 WSL 文件系统 (例如 `~/projects/...`) 内工作。`/mnt/c/...` (Windows 磁盘) 文件 I/O 较慢，会降低 TUI 响应速度。
+
+**4. 推荐使用 Windows Terminal**
+
+[Windows Terminal](https://aka.ms/terminal) 比传统控制台对 TUI 的颜色、Unicode 和鼠标支持更好。
+
+#### 选项 B: Windows 原生 (PowerShell)
+
+仅在无法使用 WSL 时使用 (例如公司策略)。AI `bash` 工具的部分调用可能无法工作。
+
+```powershell
+$ErrorActionPreference = 'Stop'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$arch = if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'aarch64' } else { 'x86_64' }
+$asset = "icebox-$arch-pc-windows-msvc.zip"
+$dest = "$env:USERPROFILE\icebox"
+Invoke-WebRequest "https://github.com/SteelCrab/icebox/releases/latest/download/$asset" -OutFile "$env:TEMP\$asset"
+Expand-Archive "$env:TEMP\$asset" -DestinationPath $dest -Force
+$userPath = [Environment]::GetEnvironmentVariable('Path','User')
+if (($userPath -split ';') -notcontains $dest) {
+    [Environment]::SetEnvironmentVariable('Path', "$dest;$userPath", 'User')
+}
+$env:Path = "$dest;$env:Path"
+Write-Host "icebox installed to $dest. Run 'icebox' to start."
+```
+
+> 首次运行可能触发 SmartScreen — 点击 **更多信息 → 仍要运行** (二进制未签名)。
+
+##### 预构建二进制文件 (手动)
+
+从 [最新发布](https://github.com/SteelCrab/icebox/releases/latest) 下载：
+
+| 架构 | 文件 |
+|---|---|
+| x86_64 | `icebox-x86_64-pc-windows-msvc.zip` |
+| aarch64 (ARM64) | `icebox-aarch64-pc-windows-msvc.zip` |
+
+```powershell
+Expand-Archive icebox-x86_64-pc-windows-msvc.zip -DestinationPath $env:USERPROFILE\icebox
+# 将 %USERPROFILE%\icebox 添加到 PATH (系统属性 → 环境变量)
+```
+
 ### 源码构建 (任意系统)
 
 #### Cargo 安装

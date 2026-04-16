@@ -106,6 +106,74 @@ chmod +x icebox
 mv icebox ~/.local/bin/    # 또는 $PATH 안의 다른 디렉토리
 ```
 
+### Windows
+
+> 💡 **WSL 사용을 권장합니다.** icebox의 AI `bash` 도구는 `grep`/`sed`/`awk`/`find` 같은 Unix 명령을 자주 호출하는데, Windows native에서는 `cmd /C`로 fallback되어 대부분 동작하지 않습니다. WSL을 쓰면 Linux 바이너리가 그대로 동작하고 OAuth 콜백·경로 처리도 안정적입니다.
+
+#### Option A: WSL (권장)
+
+**1. WSL 설치** (Windows 10 2004+ / Windows 11)
+
+PowerShell을 **관리자 권한**으로 실행:
+
+```powershell
+wsl --install
+```
+
+기본 Ubuntu 배포판이 자동 설치됩니다. 재부팅 후 사용자명/비밀번호를 설정합니다. 이미 WSL이 설치되어 있다면 `wsl --update`로 최신화하세요.
+
+**2. WSL 안에서 icebox 설치**
+
+WSL 터미널(Ubuntu)을 열고 [Linux 빠른 설치](#빠른-설치)를 그대로 따르세요:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SteelCrab/icebox/main/install.sh | bash
+```
+
+**3. 작업 디렉토리 권장사항**
+
+성능을 위해 WSL 파일시스템(`~/projects/...`) 안에서 작업하세요. `/mnt/c/...` (Windows 디스크)는 파일 I/O가 느려 TUI 응답성이 떨어집니다.
+
+**4. Windows Terminal 권장**
+
+기본 콘솔보다 [Windows Terminal](https://aka.ms/terminal)이 TUI 색상·유니코드·마우스 지원이 좋습니다.
+
+#### Option B: Windows Native (PowerShell)
+
+WSL을 쓸 수 없는 환경(회사 정책 등)에서만 권장합니다. AI `bash` 도구의 일부 명령이 동작하지 않을 수 있습니다.
+
+```powershell
+$ErrorActionPreference = 'Stop'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$arch = if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'aarch64' } else { 'x86_64' }
+$asset = "icebox-$arch-pc-windows-msvc.zip"
+$dest = "$env:USERPROFILE\icebox"
+Invoke-WebRequest "https://github.com/SteelCrab/icebox/releases/latest/download/$asset" -OutFile "$env:TEMP\$asset"
+Expand-Archive "$env:TEMP\$asset" -DestinationPath $dest -Force
+$userPath = [Environment]::GetEnvironmentVariable('Path','User')
+if (($userPath -split ';') -notcontains $dest) {
+    [Environment]::SetEnvironmentVariable('Path', "$dest;$userPath", 'User')
+}
+$env:Path = "$dest;$env:Path"
+Write-Host "icebox installed to $dest. Run 'icebox' to start."
+```
+
+> 첫 실행 시 SmartScreen이 차단할 수 있습니다 — **추가 정보 → 실행** 클릭 (바이너리는 미서명).
+
+##### 사전 빌드된 바이너리 (수동)
+
+[최신 릴리즈](https://github.com/SteelCrab/icebox/releases/latest)에서 다운로드:
+
+| 아키텍쳐 | 파일 |
+|---|---|
+| x86_64 | `icebox-x86_64-pc-windows-msvc.zip` |
+| aarch64 (ARM64) | `icebox-aarch64-pc-windows-msvc.zip` |
+
+```powershell
+Expand-Archive icebox-x86_64-pc-windows-msvc.zip -DestinationPath $env:USERPROFILE\icebox
+# %USERPROFILE%\icebox 를 PATH 에 추가 (시스템 속성 → 환경 변수)
+```
+
 ### 소스 빌드 (모든 OS)
 
 #### Cargo로 설치

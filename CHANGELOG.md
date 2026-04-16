@@ -36,15 +36,12 @@ curl -LO https://github.com/SteelCrab/icebox/releases/download/v0.5.0/icebox-aar
 tar xzf icebox-aarch64-unknown-linux-gnu.tar.gz && mv icebox ~/.local/bin/
 ```
 
-**Windows (PowerShell)**
+**Windows (PowerShell)** — 자세한 안내는 [README](README.md#windows) 참고
 ```powershell
-# x86_64
-Invoke-WebRequest https://github.com/SteelCrab/icebox/releases/download/v0.5.0/icebox-x86_64-pc-windows-msvc.zip -OutFile icebox.zip
-Expand-Archive icebox.zip $env:USERPROFILE\icebox -Force; [Environment]::SetEnvironmentVariable('Path', "$([Environment]::GetEnvironmentVariable('Path','User'));$env:USERPROFILE\icebox", 'User')
-
-# aarch64
-Invoke-WebRequest https://github.com/SteelCrab/icebox/releases/download/v0.5.0/icebox-aarch64-pc-windows-msvc.zip -OutFile icebox.zip
-Expand-Archive icebox.zip $env:USERPROFILE\icebox -Force; [Environment]::SetEnvironmentVariable('Path', "$([Environment]::GetEnvironmentVariable('Path','User'));$env:USERPROFILE\icebox", 'User')
+$arch = if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'aarch64' } else { 'x86_64' }
+Invoke-WebRequest "https://github.com/SteelCrab/icebox/releases/download/v0.5.0/icebox-$arch-pc-windows-msvc.zip" -OutFile icebox.zip
+Expand-Archive icebox.zip "$env:USERPROFILE\icebox" -Force
+$p = [Environment]::GetEnvironmentVariable('Path','User'); if (($p -split ';') -notcontains "$env:USERPROFILE\icebox") { [Environment]::SetEnvironmentVariable('Path', "$env:USERPROFILE\icebox;$p", 'User') }
 ```
 
 ### ⬆️ Upgrade

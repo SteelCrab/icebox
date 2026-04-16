@@ -2,6 +2,64 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.5.2
+
+Interactive upgrade prompt at startup — no more missed releases.
+
+### ✨ Features
+- **Interactive upgrade prompt on `icebox` / `icebox web` startup** — when a
+  newer release exists, block startup with `Update available: vX -> vY` and
+  `Upgrade now? [Y/n]`. Pressing `Y` runs `icebox upgrade` in place and exits
+  with a restart hint; `N` continues to the TUI / web server.
+  - Skips silently in non-interactive contexts (MCP stdio, piped input, CI,
+    daemonized `icebox web` behind systemd) via `std::io::IsTerminal`.
+  - Reuses the existing 24h cache (`~/.icebox/version_check.json`), so the
+    prompt is cheap on repeat launches and never re-asks within a day after
+    a `N` answer.
+  - Cross-platform: `self_update` v0.42 already handles binary swap on
+    macOS, Linux, and Windows (`.exe` via `self-replace`).
+
+### 🔧 Improvements
+- Removed the easily-missed background-thread / status-bar version
+  notification — the new blocking prompt fully replaces it.
+
+### 📦 Install
+
+**macOS (Homebrew)**
+```bash
+brew tap SteelCrab/tap && brew install icebox
+```
+
+**Linux**
+```bash
+# x86_64
+curl -LO https://github.com/SteelCrab/icebox/releases/download/v0.5.2/icebox-x86_64-unknown-linux-gnu.tar.gz
+tar xzf icebox-x86_64-unknown-linux-gnu.tar.gz && mv icebox ~/.local/bin/
+
+# aarch64
+curl -LO https://github.com/SteelCrab/icebox/releases/download/v0.5.2/icebox-aarch64-unknown-linux-gnu.tar.gz
+tar xzf icebox-aarch64-unknown-linux-gnu.tar.gz && mv icebox ~/.local/bin/
+```
+
+**Windows (PowerShell)**
+```powershell
+$arch = if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'aarch64' } else { 'x86_64' }
+Invoke-WebRequest "https://github.com/SteelCrab/icebox/releases/download/v0.5.2/icebox-$arch-pc-windows-msvc.zip" -OutFile icebox.zip
+Expand-Archive icebox.zip "$env:USERPROFILE\icebox" -Force
+$p = [Environment]::GetEnvironmentVariable('Path','User'); if (($p -split ';') -notcontains "$env:USERPROFILE\icebox") { [Environment]::SetEnvironmentVariable('Path', "$env:USERPROFILE\icebox;$p", 'User') }
+```
+
+### ⬆️ Upgrade
+
+```bash
+icebox upgrade         # self-update (any platform)
+brew upgrade icebox    # macOS Homebrew
+```
+
+Or just launch `icebox` and press `Y` at the prompt.
+
+**Full Changelog**: https://github.com/SteelCrab/icebox/compare/v0.5.1...v0.5.2
+
 ## v0.5.1
 
 Windows binaries run out-of-the-box; TUI notifies when a newer release ships.

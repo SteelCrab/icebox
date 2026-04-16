@@ -665,6 +665,15 @@ fn run_tui(workspace: &std::path::Path) -> Result<()> {
     let mut app = App::new(store, workspace)?;
     setup_ai_runtime(&mut app, workspace);
 
+    // Background version check — cached 24h; runs once at startup.
+    let (update_tx, update_rx) = std::sync::mpsc::channel();
+    app.update_check_rx = Some(update_rx);
+    std::thread::spawn(move || {
+        if let Some(latest) = upgrade::check_for_update() {
+            let _ = update_tx.send(latest);
+        }
+    });
+
     let result = app.run(&mut terminal);
     restore_terminal()?;
     result

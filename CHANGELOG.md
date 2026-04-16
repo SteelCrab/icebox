@@ -13,6 +13,7 @@ Full Windows architecture support across runtime, tooling, and release pipeline.
 - Windows artifacts distributed as `.zip` archives
 - Cross-platform home directory resolution (`HOME` on Unix, `USERPROFILE` on Windows)
 - Shell execution via `cmd /C` on Windows, `sh -c` elsewhere
+- **`icebox upgrade`** — self-update via `self_update` crate (macOS, Linux, Windows)
 
 ### 🔧 Improvements
 - File permission handling guarded by `#[cfg(unix)]` (no-op on Windows)
@@ -36,7 +37,7 @@ curl -LO https://github.com/SteelCrab/icebox/releases/download/v0.5.0/icebox-aar
 tar xzf icebox-aarch64-unknown-linux-gnu.tar.gz && mv icebox ~/.local/bin/
 ```
 
-**Windows (PowerShell)** — 자세한 안내는 [README](README.md#windows) 참고
+**Windows (PowerShell)** — see [README](README.md#windows) for details
 ```powershell
 $arch = if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'aarch64' } else { 'x86_64' }
 Invoke-WebRequest "https://github.com/SteelCrab/icebox/releases/download/v0.5.0/icebox-$arch-pc-windows-msvc.zip" -OutFile icebox.zip

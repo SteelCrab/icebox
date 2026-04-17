@@ -967,6 +967,29 @@ static HTML: &str = r#"<!DOCTYPE html>
   .chat-messages::-webkit-scrollbar-track { background: transparent; }
   .chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
+  .chat-msg table,
+  .modal-content table {
+    border-collapse: collapse;
+    margin: 6px 0;
+    font-size: 0.95em;
+    max-width: 100%;
+  }
+  .chat-msg th,
+  .chat-msg td,
+  .modal-content th,
+  .modal-content td {
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    text-align: left;
+    white-space: normal;
+    vertical-align: top;
+  }
+  .chat-msg th,
+  .modal-content th {
+    background: var(--surface);
+    font-weight: 600;
+  }
+
   .chat-msg {
     max-width: 85%;
     padding: 7px 11px;
@@ -1425,6 +1448,48 @@ function renderMarkdown(src) {
       continue;
     }
     if (inCode) { codeLines.push(line); continue; }
+
+    // GFM table: header row + `| --- | --- |` separator + data rows
+    if (line.includes('|') && i + 1 < lines.length) {
+      const sep = lines[i + 1];
+      if (/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(sep)) {
+        closeList();
+        const parseCells = (ln) => {
+          let s = ln.trim();
+          if (s.startsWith('|')) s = s.slice(1);
+          if (s.endsWith('|')) s = s.slice(0, -1);
+          return s.split('|').map(c => c.trim());
+        };
+        const aligns = parseCells(sep).map(cell => {
+          const l = cell.startsWith(':'), r = cell.endsWith(':');
+          if (l && r) return 'center';
+          if (r) return 'right';
+          if (l) return 'left';
+          return '';
+        });
+        const headers = parseCells(line);
+        html += '<table><thead><tr>';
+        headers.forEach((h, idx) => {
+          const a = aligns[idx] ? ` style="text-align:${aligns[idx]}"` : '';
+          html += `<th${a}>${inline(h)}</th>`;
+        });
+        html += '</tr></thead><tbody>';
+        i += 2;
+        while (i < lines.length && lines[i].includes('|') && lines[i].trim() !== '') {
+          const cells = parseCells(lines[i]);
+          html += '<tr>';
+          cells.forEach((c, idx) => {
+            const a = aligns[idx] ? ` style="text-align:${aligns[idx]}"` : '';
+            html += `<td${a}>${inline(c)}</td>`;
+          });
+          html += '</tr>';
+          i++;
+        }
+        html += '</tbody></table>';
+        i--;
+        continue;
+      }
+    }
 
     // Headings
     const hm = line.match(/^(#{1,3})\s+(.+)/);

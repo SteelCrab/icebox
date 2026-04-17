@@ -9,6 +9,9 @@ Claude Opus 4.7 support.
 ### ✨ Features
 - **Opus 4.7 (1M context) support** — `claude-opus-4-7` is now selectable from the TUI `/model` modal and the web chat dropdown; Opus 4.6 is removed and the `opus` alias transparently resolves saved `claude-opus-4-6` configs to 4.7.
 
+### 🔧 Improvements
+- **Web chat: render GFM markdown tables** — `| h1 | h2 |` followed by a `| --- | --- |` separator now produces a styled `<table>` in chat bubbles and task modals instead of leaking the raw pipes into a paragraph; column alignment markers (`:---`, `---:`, `:---:`) are honored.
+
 ## v0.5.3
 
 Hotfix: `icebox upgrade` was unresponsive on Windows.

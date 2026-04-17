@@ -681,7 +681,42 @@ static HTML: &str = r#"<!DOCTYPE html>
     overflow-y: hidden;
     padding: 14px;
     gap: 12px;
+    zoom: var(--board-zoom, 1);
   }
+
+  .zoom-controls {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .zoom-btn {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    padding: 4px 9px;
+    transition: color 0.15s, background 0.15s;
+  }
+  .zoom-btn:hover { color: var(--text); background: var(--bg); }
+  .zoom-btn:disabled { color: #ccc; cursor: default; background: none; }
+  .zoom-level {
+    font-size: 11px;
+    color: var(--muted);
+    min-width: 34px;
+    text-align: center;
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    padding: 0 6px;
+    cursor: pointer;
+    user-select: none;
+    line-height: 1;
+  }
+  .zoom-level:hover { color: var(--text); }
 
   /* ── Column ── */
   .column {
@@ -1304,6 +1339,14 @@ static HTML: &str = r#"<!DOCTYPE html>
   <select class="swimlane-select" id="swimlane-select" onchange="switchSwimlane(this.value)">
     <option value="">All</option>
   </select>
+  <div class="zoom-controls" role="group" aria-label="Board zoom">
+    <button class="zoom-btn" id="zoom-out-btn" onclick="zoomOut()"
+      title="Zoom out" aria-label="Zoom out">−</button>
+    <span class="zoom-level" id="zoom-level" onclick="zoomReset()"
+      title="Reset to 100%" role="button" tabindex="0">100%</span>
+    <button class="zoom-btn" id="zoom-in-btn" onclick="zoomIn()"
+      title="Zoom in" aria-label="Zoom in">+</button>
+  </div>
   <button class="refresh-btn" onclick="loadTasks()">Refresh</button>
 </header>
 
@@ -1364,6 +1407,43 @@ let allTasks = [];
 let activeTab = COLUMNS[0].key;
 let activeSwimlane = '';
 let activeSearch = '';
+
+// ── Board zoom ──
+const ZOOM_STEPS = [0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75];
+const ZOOM_KEY = 'icebox-board-zoom';
+
+function loadBoardZoom() {
+  const raw = parseFloat(localStorage.getItem(ZOOM_KEY));
+  const v = Number.isFinite(raw) ? raw : 1;
+  return Math.min(Math.max(v, ZOOM_STEPS[0]), ZOOM_STEPS[ZOOM_STEPS.length - 1]);
+}
+let boardZoom = loadBoardZoom();
+
+function applyBoardZoom() {
+  document.documentElement.style.setProperty('--board-zoom', String(boardZoom));
+  const el = document.getElementById('zoom-level');
+  if (el) el.textContent = `${Math.round(boardZoom * 100)}%`;
+  const outBtn = document.getElementById('zoom-out-btn');
+  const inBtn = document.getElementById('zoom-in-btn');
+  if (outBtn) outBtn.disabled = boardZoom <= ZOOM_STEPS[0] + 1e-6;
+  if (inBtn)  inBtn.disabled  = boardZoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1] - 1e-6;
+  try { localStorage.setItem(ZOOM_KEY, String(boardZoom)); } catch (_) {}
+}
+
+function zoomIn() {
+  const next = ZOOM_STEPS.find(s => s > boardZoom + 1e-6);
+  if (next !== undefined) { boardZoom = next; applyBoardZoom(); }
+}
+
+function zoomOut() {
+  let next;
+  for (const s of ZOOM_STEPS) { if (s < boardZoom - 1e-6) next = s; }
+  if (next !== undefined) { boardZoom = next; applyBoardZoom(); }
+}
+
+function zoomReset() { boardZoom = 1; applyBoardZoom(); }
+
+document.addEventListener('DOMContentLoaded', applyBoardZoom);
 
 async function loadTasks() {
   try {

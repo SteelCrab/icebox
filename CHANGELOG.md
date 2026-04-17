@@ -14,6 +14,7 @@ Claude Opus 4.7 support.
 - **GFM tables in chat markdown** — rendered as `<table>` with alignment.
 - **Copy raw markdown from task modal** — clipboard icon next to close.
 - **Push-based live board updates** — `notify` watcher + `/ws/events`, 10s poll fallback.
+- **Web board zoom** — header `−` / `+` buttons scale cards (70–175%); click % to reset, persisted in localStorage.
 
 ## v0.5.3
 

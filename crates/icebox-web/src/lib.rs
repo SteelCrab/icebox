@@ -748,6 +748,39 @@ static HTML: &str = r#"<!DOCTYPE html>
   }
   .modal-close:hover { color: var(--text); }
 
+  .modal-copy {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 2px 4px;
+    display: inline-flex;
+    align-items: center;
+    line-height: 1;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+  }
+  .modal-copy:hover { color: var(--text); background: var(--surface); }
+  .modal-copy.copied { color: #2e7d32; }
+  .modal-copy svg { display: block; }
+
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%) translateY(8px);
+    background: var(--text);
+    color: var(--surface);
+    padding: 7px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s, transform 0.18s;
+    z-index: 9999;
+  }
+  .toast.show { opacity: 0.92; transform: translateX(-50%) translateY(0); }
+
   .modal-body {
     padding: 14px 18px;
     overflow-y: auto;
@@ -1376,7 +1409,10 @@ function formatDue(iso) {
   return `<span class="${cls}">${label}</span>`;
 }
 
+let currentModalTask = null;
+
 function openModal(task) {
+  currentModalTask = task;
   const p = PRIORITY[task.priority] || PRIORITY.medium;
   const col = COLUMNS.find(c => c.key === task.column) || COLUMNS[0];
   const tags = (task.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join(' ');
@@ -1385,11 +1421,21 @@ function openModal(task) {
   const created = task.created_at ? new Date(task.created_at).toLocaleDateString() : '—';
   const due     = task.due_date   ? new Date(task.due_date).toLocaleDateString()   : '—';
   const start   = task.start_date ? new Date(task.start_date).toLocaleDateString() : '—';
+  const hasBody = !!(task.body && task.body.trim());
+  const copyBtn = hasBody
+    ? `<button class="modal-copy" onclick="copyTaskMarkdown(this)" title="Copy markdown source"
+        aria-label="Copy markdown"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg></button>`
+    : '';
 
   document.getElementById('modal-inner').innerHTML = `
     <div class="modal-header">
       <div class="modal-priority-dot" style="background:${p.color}"></div>
       <div class="modal-title">${esc(task.title)}</div>
+      ${copyBtn}
       <button class="modal-close" onclick="closeModal()">×</button>
     </div>
     <div class="modal-body">
@@ -1412,6 +1458,48 @@ function openModal(task) {
 function closeModal(e) {
   if (!e || e.target === document.getElementById('modal'))
     document.getElementById('modal').classList.remove('open');
+}
+
+async function copyTaskMarkdown(btn) {
+  if (!currentModalTask) return;
+  const text = (currentModalTask.body || '').trim();
+  if (!text) return;
+  let ok = false;
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+  } catch (_) { ok = false; }
+
+  if (btn) {
+    btn.classList.add('copied');
+    setTimeout(() => btn.classList.remove('copied'), 1200);
+  }
+  showToast(ok ? 'Copied markdown to clipboard' : 'Copy failed');
+}
+
+function showToast(msg) {
+  let t = document.getElementById('toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'toast';
+    t.className = 'toast';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 1500);
 }
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });

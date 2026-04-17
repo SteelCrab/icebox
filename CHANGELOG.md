@@ -11,6 +11,7 @@ Claude Opus 4.7 support.
 
 ### 🔧 Improvements
 - **Web chat: render GFM markdown tables** — `| h1 | h2 |` followed by a `| --- | --- |` separator now produces a styled `<table>` in chat bubbles and task modals instead of leaking the raw pipes into a paragraph; column alignment markers (`:---`, `---:`, `:---:`) are honored.
+- **Web task modal: copy raw markdown button** — a clipboard icon next to the close button copies the task body's original markdown source (not the rendered HTML) via `navigator.clipboard`, with a toast confirmation and an `execCommand` fallback for non-secure contexts.
 
 ## v0.5.3
 

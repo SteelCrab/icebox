@@ -868,7 +868,7 @@ dependencies = [
 
 [[package]]
 name = "icebox"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "chrono",
@@ -889,7 +889,7 @@ dependencies = [
 
 [[package]]
 name = "icebox-api"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "reqwest",
@@ -901,14 +901,14 @@ dependencies = [
 
 [[package]]
 name = "icebox-commands"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anyhow",
 ]
 
 [[package]]
 name = "icebox-runtime"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "chrono",
@@ -924,7 +924,7 @@ dependencies = [
 
 [[package]]
 name = "icebox-task"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "chrono",
@@ -938,7 +938,7 @@ dependencies = [
 
 [[package]]
 name = "icebox-tools"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "chrono",
@@ -956,7 +956,7 @@ dependencies = [
 
 [[package]]
 name = "icebox-tui"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "chrono",
@@ -974,7 +974,7 @@ dependencies = [
 
 [[package]]
 name = "icebox-web"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "axum",

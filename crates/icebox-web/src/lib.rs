@@ -48,6 +48,7 @@ pub async fn serve(path: PathBuf, port: u16) -> Result<()> {
         .route("/", get(serve_html))
         .route("/api/tasks", get(api_tasks))
         .route("/api/tasks/move", post(api_move_task))
+        .route("/api/tasks/delete", post(api_delete_task))
         .route("/api/models", get(api_models))
         .route("/ws/chat", get(ws_chat_handler))
         .route("/ws/events", get(ws_events_handler))
@@ -245,6 +246,36 @@ async fn api_move_task(
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!(r#"{{"error":"save failed: {e}"}}"#),
+        ),
+    }
+}
+
+// ── Delete Task API ──
+
+#[derive(Deserialize)]
+struct DeleteTaskRequest {
+    task_id: String,
+}
+
+async fn api_delete_task(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<DeleteTaskRequest>,
+) -> impl IntoResponse {
+    let store = match state.shared_store.lock() {
+        Ok(s) => s,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!(r#"{{"error":"lock error: {e}"}}"#),
+            );
+        }
+    };
+
+    match store.delete(&body.task_id) {
+        Ok(()) => (StatusCode::OK, r#"{"ok":true}"#.to_string()),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!(r#"{{"error":"delete failed: {e}"}}"#),
         ),
     }
 }
@@ -912,6 +943,28 @@ static HTML: &str = r#"<!DOCTYPE html>
   .modal-copy:hover { color: var(--text); background: var(--surface); }
   .modal-copy.copied { color: #2e7d32; }
   .modal-copy svg { display: block; }
+
+  .modal-delete {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 2px 4px;
+    display: inline-flex;
+    align-items: center;
+    line-height: 1;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+  }
+  .modal-delete:hover { color: #c62828; background: var(--surface); }
+  .modal-delete.arm {
+    color: #c62828;
+    background: #fdecea;
+    font-size: 11px;
+    gap: 4px;
+    padding: 2px 8px;
+  }
+  .modal-delete svg { display: block; }
 
   .toast {
     position: fixed;
@@ -1646,12 +1699,20 @@ function openModal(task) {
         <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
         </svg></button>`
     : '';
+  const deleteBtn = `<button class="modal-delete" onclick="deleteTaskFromModal(this)"
+      title="Delete task" aria-label="Delete task"><svg width="15" height="15"
+      viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+      stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline>
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+      <path d="M10 11v6M14 11v6"></path>
+      <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"></path></svg></button>`;
 
   document.getElementById('modal-inner').innerHTML = `
     <div class="modal-header">
       <div class="modal-priority-dot" style="background:${p.color}"></div>
       <div class="modal-title">${esc(task.title)}</div>
       ${copyBtn}
+      ${deleteBtn}
       <button class="modal-close" onclick="closeModal()">×</button>
     </div>
     <div class="modal-body">
@@ -1674,6 +1735,52 @@ function openModal(task) {
 function closeModal(e) {
   if (!e || e.target === document.getElementById('modal'))
     document.getElementById('modal').classList.remove('open');
+}
+
+async function deleteTaskFromModal(btn) {
+  if (!currentModalTask) return;
+  // Two-stage confirmation: first click arms the button, second click deletes.
+  if (!btn.classList.contains('arm')) {
+    btn.classList.add('arm');
+    btn.setAttribute('title', 'Click again to confirm delete');
+    btn.innerHTML = 'Click again to delete';
+    clearTimeout(btn._disarm);
+    btn._disarm = setTimeout(() => {
+      btn.classList.remove('arm');
+      btn.setAttribute('title', 'Delete task');
+      btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="3 6 5 6 21 6"></polyline>
+        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+        <path d="M10 11v6M14 11v6"></path>
+        <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"></path></svg>`;
+    }, 2500);
+    return;
+  }
+  clearTimeout(btn._disarm);
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/tasks/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task_id: currentModalTask.id }),
+    });
+    if (!res.ok) {
+      const t = await res.text();
+      showToast(`Delete failed: ${t}`);
+      btn.disabled = false;
+      return;
+    }
+  } catch (e) {
+    showToast(`Delete failed: ${e}`);
+    btn.disabled = false;
+    return;
+  }
+  const title = currentModalTask.title;
+  currentModalTask = null;
+  document.getElementById('modal').classList.remove('open');
+  showToast(`Deleted: ${title}`);
+  loadTasks();
 }
 
 async function copyTaskMarkdown(btn) {

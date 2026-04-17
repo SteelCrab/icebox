@@ -15,6 +15,7 @@ Claude Opus 4.7 support.
 - **Copy raw markdown from task modal** — clipboard icon next to close.
 - **Push-based live board updates** — `notify` watcher + `/ws/events`, 10s poll fallback.
 - **Web board zoom** — header `−` / `+` buttons scale cards (70–175%); click % to reset, persisted in localStorage.
+- **Delete task from web modal** — trash icon + two-stage confirm, calls `/api/tasks/delete`.
 
 ## v0.5.3
 

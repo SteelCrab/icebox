@@ -12,14 +12,19 @@ use axum::{
 use futures_util::{SinkExt, StreamExt};
 use icebox_task::model::Column;
 use icebox_task::store::TaskStore;
+use notify::{RecursiveMode, Watcher};
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use tokio::sync::broadcast;
 
 struct AppState {
     store: TaskStore,
     workspace: PathBuf,
     shared_store: Arc<Mutex<TaskStore>>,
+    /// Broadcast sender that pushes a tick whenever the `.icebox/tasks/`
+    /// directory changes. Each `/ws/events` client subscribes to it.
+    events_tx: broadcast::Sender<()>,
 }
 
 /// Start the Icebox local web UI server.
@@ -30,10 +35,13 @@ pub async fn serve(path: PathBuf, port: u16) -> Result<()> {
     let workspace = path.canonicalize().unwrap_or(path);
     let store = TaskStore::open(&workspace)?;
     let shared_store = Arc::new(Mutex::new(TaskStore::open(&workspace)?));
+    let (events_tx, _) = broadcast::channel::<()>(16);
+    spawn_tasks_watcher(&workspace, events_tx.clone());
     let state = Arc::new(AppState {
         store,
         workspace,
         shared_store,
+        events_tx,
     });
 
     let app = Router::new()
@@ -42,6 +50,7 @@ pub async fn serve(path: PathBuf, port: u16) -> Result<()> {
         .route("/api/tasks/move", post(api_move_task))
         .route("/api/models", get(api_models))
         .route("/ws/chat", get(ws_chat_handler))
+        .route("/ws/events", get(ws_events_handler))
         .with_state(state);
 
     let addr = format!("127.0.0.1:{port}");
@@ -52,6 +61,97 @@ pub async fn serve(path: PathBuf, port: u16) -> Result<()> {
     println!("icebox web → http://{bound}");
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+/// Watch `<workspace>/.icebox/tasks/` on a dedicated OS thread and push a
+/// coalesced tick through `events_tx` whenever anything inside changes. The
+/// tasks directory may not exist yet (fresh workspace) — we create it so the
+/// watcher has a stable target. Any watcher setup failure is logged and the
+/// web server keeps running via the client-side polling fallback.
+fn spawn_tasks_watcher(workspace: &std::path::Path, events_tx: broadcast::Sender<()>) {
+    let tasks_dir = workspace.join(".icebox").join("tasks");
+    if let Err(e) = std::fs::create_dir_all(&tasks_dir) {
+        eprintln!("[icebox-web] cannot create tasks dir {tasks_dir:?}: {e}");
+        return;
+    }
+    std::thread::Builder::new()
+        .name("icebox-web-tasks-watcher".into())
+        .spawn(move || {
+            let (raw_tx, raw_rx) = std::sync::mpsc::channel();
+            let mut watcher = match notify::recommended_watcher(move |res| {
+                let _ = raw_tx.send(res);
+            }) {
+                Ok(w) => w,
+                Err(e) => {
+                    eprintln!("[icebox-web] notify watcher init failed: {e}");
+                    return;
+                }
+            };
+            if let Err(e) = watcher.watch(&tasks_dir, RecursiveMode::NonRecursive) {
+                eprintln!("[icebox-web] watch({tasks_dir:?}) failed: {e}");
+                return;
+            }
+            loop {
+                match raw_rx.recv() {
+                    Ok(Ok(_event)) => {
+                        // Coalesce any bursts (editor writes, save_memory, etc.)
+                        while raw_rx.try_recv().is_ok() {}
+                        // Ignore send error: no subscribers yet is fine.
+                        let _ = events_tx.send(());
+                    }
+                    Ok(Err(e)) => {
+                        eprintln!("[icebox-web] watcher error: {e}");
+                    }
+                    Err(_) => break, // sender dropped — watcher thread exits
+                }
+            }
+        })
+        .ok();
+}
+
+async fn ws_events_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_events_connection(socket, state))
+}
+
+async fn handle_events_connection(socket: WebSocket, state: Arc<AppState>) {
+    let (mut tx, mut rx_ws) = socket.split();
+    let mut rx = state.events_tx.subscribe();
+
+    if tx
+        .send(Message::Text(r#"{"type":"ready"}"#.into()))
+        .await
+        .is_err()
+    {
+        return;
+    }
+
+    loop {
+        tokio::select! {
+            incoming = rx_ws.next() => {
+                match incoming {
+                    Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
+                    _ => {}
+                }
+            }
+            notif = rx.recv() => {
+                match notif {
+                    Ok(()) | Err(broadcast::error::RecvError::Lagged(_)) => {
+                        if tx
+                            .send(Message::Text(r#"{"type":"changed"}"#.into()))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        }
+    }
 }
 
 async fn serve_html() -> impl IntoResponse {
@@ -1945,13 +2045,50 @@ async function moveTask(taskId, column) {
   } catch (e) { /* ignore */ }
 }
 
-// Auto-refresh: poll every 3s while the tab is visible. Skip when a modal
-// is open or the AI is mid-stream so the user's interaction isn't disrupted.
-const REFRESH_INTERVAL_MS = 3000;
+// Live updates: subscribe to `/ws/events` so file changes in the workspace
+// (from TUI, MCP, other tabs, `icebox create_task` tools, etc.) push an
+// immediate `loadTasks()`. The setInterval below stays as a safety net for
+// environments where the websocket can't stay connected (proxies, sleep).
+let eventsWs = null;
+let eventsReconnectTimer = null;
+
+function shouldApplyEvent() {
+  if (document.hidden) return false;
+  if (document.querySelector('.modal-overlay.open')) return false;
+  if (aiBusy) return false;
+  return true;
+}
+
+function connectEventsWs() {
+  if (eventsReconnectTimer) { clearTimeout(eventsReconnectTimer); eventsReconnectTimer = null; }
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  try {
+    eventsWs = new WebSocket(`${proto}//${location.host}/ws/events`);
+  } catch (_) {
+    eventsReconnectTimer = setTimeout(connectEventsWs, 3000);
+    return;
+  }
+  eventsWs.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.type === 'changed' && shouldApplyEvent()) loadTasks();
+    } catch (_) { /* ignore non-JSON frames */ }
+  };
+  eventsWs.onclose = () => {
+    eventsWs = null;
+    eventsReconnectTimer = setTimeout(connectEventsWs, 3000);
+  };
+  eventsWs.onerror = () => {
+    try { eventsWs && eventsWs.close(); } catch (_) {}
+  };
+}
+connectEventsWs();
+
+// Safety-net polling: slower now that we have push updates, but kept for
+// offline fallback and to catch anything the watcher might miss.
+const REFRESH_INTERVAL_MS = 10000;
 setInterval(() => {
-  if (document.hidden) return;
-  if (document.querySelector('.modal-overlay.open')) return;
-  if (aiBusy) return;
+  if (!shouldApplyEvent()) return;
   loadTasks();
 }, REFRESH_INTERVAL_MS);
 

@@ -7,12 +7,13 @@ All notable changes to this project will be documented in this file.
 Claude Opus 4.7 support.
 
 ### ✨ Features
-- **Opus 4.7 (1M context) support** — `claude-opus-4-7` is now selectable from the TUI `/model` modal and the web chat dropdown; Opus 4.6 is removed and the `opus` alias transparently resolves saved `claude-opus-4-6` configs to 4.7.
-- **Live task search in TUI and web** — press `f` in the TUI board to open a live search bar (`Enter` applies, `Esc` clears, `Esc` again from board clears an active filter); the web board gains a `Search tasks…` input next to the swimlane selector. Matches title / body / tags / swimlane (case-insensitive substring) and composes with the existing swimlane filter.
+- **Opus 4.7 (1M context)** — selectable in TUI `/model` and web dropdown.
+- **Task search** — `f` in TUI board, search input in web header.
 
 ### 🔧 Improvements
-- **Web chat: render GFM markdown tables** — `| h1 | h2 |` followed by a `| --- | --- |` separator now produces a styled `<table>` in chat bubbles and task modals instead of leaking the raw pipes into a paragraph; column alignment markers (`:---`, `---:`, `:---:`) are honored.
-- **Web task modal: copy raw markdown button** — a clipboard icon next to the close button copies the task body's original markdown source (not the rendered HTML) via `navigator.clipboard`, with a toast confirmation and an `execCommand` fallback for non-secure contexts.
+- **GFM tables in chat markdown** — rendered as `<table>` with alignment.
+- **Copy raw markdown from task modal** — clipboard icon next to close.
+- **Push-based live board updates** — `notify` watcher + `/ws/events`, 10s poll fallback.
 
 ## v0.5.3
 

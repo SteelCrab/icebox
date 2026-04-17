@@ -14,6 +14,7 @@ Claude Opus 4.7 support.
 - **GFM tables in chat markdown** — rendered as `<table>` with alignment.
 - **Copy raw markdown from task modal** — clipboard icon next to close.
 - **Push-based live board updates** — `notify` watcher + `/ws/events`, 10s poll fallback.
+- **Delete task from web modal** — trash icon + two-stage confirm, calls `/api/tasks/delete`.
 
 ## v0.5.3
 

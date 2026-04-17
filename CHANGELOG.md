@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.5.5
+
+### 🔧 Improvements
+- **Expand / collapse task view (web)** — a new toggle button in the task modal switches between the default dialog and a full-page view (larger title / body / metadata). Replaces the header `−` / `+` board zoom controls from v0.5.4.
+
 ## v0.5.4
 
 Claude Opus 4.7 support.

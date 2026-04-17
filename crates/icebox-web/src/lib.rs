@@ -712,42 +712,7 @@ static HTML: &str = r#"<!DOCTYPE html>
     overflow-y: hidden;
     padding: 14px;
     gap: 12px;
-    zoom: var(--board-zoom, 1);
   }
-
-  .zoom-controls {
-    display: inline-flex;
-    align-items: center;
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    overflow: hidden;
-    background: var(--surface);
-  }
-  .zoom-btn {
-    background: none;
-    border: none;
-    color: var(--muted);
-    cursor: pointer;
-    font-size: 13px;
-    line-height: 1;
-    padding: 4px 9px;
-    transition: color 0.15s, background 0.15s;
-  }
-  .zoom-btn:hover { color: var(--text); background: var(--bg); }
-  .zoom-btn:disabled { color: #ccc; cursor: default; background: none; }
-  .zoom-level {
-    font-size: 11px;
-    color: var(--muted);
-    min-width: 34px;
-    text-align: center;
-    border-left: 1px solid var(--border);
-    border-right: 1px solid var(--border);
-    padding: 0 6px;
-    cursor: pointer;
-    user-select: none;
-    line-height: 1;
-  }
-  .zoom-level:hover { color: var(--text); }
 
   /* ── Column ── */
   .column {
@@ -892,7 +857,35 @@ static HTML: &str = r#"<!DOCTYPE html>
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    transition: width 0.18s ease, height 0.18s ease,
+                max-height 0.18s ease, border-radius 0.18s ease;
   }
+
+  /* Fullscreen toggle — takes over the page. */
+  .modal-overlay.fullscreen { background: var(--bg); }
+  .modal-overlay.fullscreen .modal {
+    width: 100vw;
+    height: 100vh;
+    max-height: none;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+  }
+  .modal-overlay.fullscreen .modal-header {
+    padding: 18px max(24px, calc((100vw - 960px) / 2)) 14px;
+    background: var(--surface);
+  }
+  .modal-overlay.fullscreen .modal-title { font-size: 20px; }
+  .modal-overlay.fullscreen .modal-priority-dot {
+    width: 12px; height: 12px; margin-top: 6px;
+  }
+  .modal-overlay.fullscreen .modal-body {
+    padding: 24px max(24px, calc((100vw - 960px) / 2)) 40px;
+  }
+  .modal-overlay.fullscreen .modal-content {
+    font-size: 14px; line-height: 1.75;
+  }
+  .modal-overlay.fullscreen .meta-item { font-size: 12px; }
 
   .modal-header {
     padding: 16px 18px 12px;
@@ -965,6 +958,21 @@ static HTML: &str = r#"<!DOCTYPE html>
     padding: 2px 8px;
   }
   .modal-delete svg { display: block; }
+
+  .modal-fullscreen {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 2px 4px;
+    display: inline-flex;
+    align-items: center;
+    line-height: 1;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+  }
+  .modal-fullscreen:hover { color: var(--text); background: var(--surface); }
+  .modal-fullscreen svg { display: block; }
 
   .toast {
     position: fixed;
@@ -1392,14 +1400,6 @@ static HTML: &str = r#"<!DOCTYPE html>
   <select class="swimlane-select" id="swimlane-select" onchange="switchSwimlane(this.value)">
     <option value="">All</option>
   </select>
-  <div class="zoom-controls" role="group" aria-label="Board zoom">
-    <button class="zoom-btn" id="zoom-out-btn" onclick="zoomOut()"
-      title="Zoom out" aria-label="Zoom out">−</button>
-    <span class="zoom-level" id="zoom-level" onclick="zoomReset()"
-      title="Reset to 100%" role="button" tabindex="0">100%</span>
-    <button class="zoom-btn" id="zoom-in-btn" onclick="zoomIn()"
-      title="Zoom in" aria-label="Zoom in">+</button>
-  </div>
   <button class="refresh-btn" onclick="loadTasks()">Refresh</button>
 </header>
 
@@ -1460,43 +1460,6 @@ let allTasks = [];
 let activeTab = COLUMNS[0].key;
 let activeSwimlane = '';
 let activeSearch = '';
-
-// ── Board zoom ──
-const ZOOM_STEPS = [0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75];
-const ZOOM_KEY = 'icebox-board-zoom';
-
-function loadBoardZoom() {
-  const raw = parseFloat(localStorage.getItem(ZOOM_KEY));
-  const v = Number.isFinite(raw) ? raw : 1;
-  return Math.min(Math.max(v, ZOOM_STEPS[0]), ZOOM_STEPS[ZOOM_STEPS.length - 1]);
-}
-let boardZoom = loadBoardZoom();
-
-function applyBoardZoom() {
-  document.documentElement.style.setProperty('--board-zoom', String(boardZoom));
-  const el = document.getElementById('zoom-level');
-  if (el) el.textContent = `${Math.round(boardZoom * 100)}%`;
-  const outBtn = document.getElementById('zoom-out-btn');
-  const inBtn = document.getElementById('zoom-in-btn');
-  if (outBtn) outBtn.disabled = boardZoom <= ZOOM_STEPS[0] + 1e-6;
-  if (inBtn)  inBtn.disabled  = boardZoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1] - 1e-6;
-  try { localStorage.setItem(ZOOM_KEY, String(boardZoom)); } catch (_) {}
-}
-
-function zoomIn() {
-  const next = ZOOM_STEPS.find(s => s > boardZoom + 1e-6);
-  if (next !== undefined) { boardZoom = next; applyBoardZoom(); }
-}
-
-function zoomOut() {
-  let next;
-  for (const s of ZOOM_STEPS) { if (s < boardZoom - 1e-6) next = s; }
-  if (next !== undefined) { boardZoom = next; applyBoardZoom(); }
-}
-
-function zoomReset() { boardZoom = 1; applyBoardZoom(); }
-
-document.addEventListener('DOMContentLoaded', applyBoardZoom);
 
 async function loadTasks() {
   try {
@@ -1680,6 +1643,28 @@ function formatDue(iso) {
 
 let currentModalTask = null;
 
+const FS_EXPAND_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <polyline points="15 3 21 3 21 9"></polyline>
+  <polyline points="9 21 3 21 3 15"></polyline>
+  <line x1="21" y1="3" x2="14" y2="10"></line>
+  <line x1="3" y1="21" x2="10" y2="14"></line></svg>`;
+const FS_COLLAPSE_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <polyline points="4 14 10 14 10 20"></polyline>
+  <polyline points="20 10 14 10 14 4"></polyline>
+  <line x1="14" y1="10" x2="21" y2="3"></line>
+  <line x1="3" y1="21" x2="10" y2="14"></line></svg>`;
+
+function toggleTaskFullscreen(btn) {
+  const overlay = document.getElementById('modal');
+  const fs = overlay.classList.toggle('fullscreen');
+  btn.innerHTML = fs ? FS_COLLAPSE_ICON : FS_EXPAND_ICON;
+  const label = fs ? 'Shrink to dialog' : 'Expand to full page';
+  btn.setAttribute('title', label);
+  btn.setAttribute('aria-label', label);
+}
+
 function openModal(task) {
   currentModalTask = task;
   const p = PRIORITY[task.priority] || PRIORITY.medium;
@@ -1713,6 +1698,9 @@ function openModal(task) {
       <div class="modal-title">${esc(task.title)}</div>
       ${copyBtn}
       ${deleteBtn}
+      <button class="modal-fullscreen" id="modal-fullscreen-btn"
+        onclick="toggleTaskFullscreen(this)"
+        title="Expand to full page" aria-label="Expand to full page">${FS_EXPAND_ICON}</button>
       <button class="modal-close" onclick="closeModal()">×</button>
     </div>
     <div class="modal-body">
@@ -1729,7 +1717,9 @@ function openModal(task) {
       ${body}
     </div>
   `;
-  document.getElementById('modal').classList.add('open');
+  const overlay = document.getElementById('modal');
+  overlay.classList.remove('fullscreen');
+  overlay.classList.add('open');
 }
 
 function closeModal(e) {

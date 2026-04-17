@@ -500,6 +500,20 @@ static HTML: &str = r#"<!DOCTYPE html>
   }
   .swimlane-select:focus { border-color: #999; }
 
+  .task-search {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 4px 8px;
+    font-size: 12px;
+    color: var(--text);
+    outline: none;
+    width: 170px;
+    min-width: 120px;
+  }
+  .task-search:focus { border-color: #999; }
+  .task-search::-webkit-search-cancel-button { cursor: pointer; }
+
   .refresh-btn {
     background: none;
     border: 1px solid var(--border);
@@ -1184,6 +1198,9 @@ static HTML: &str = r#"<!DOCTYPE html>
   <h1>Icebox</h1>
   <span class="subtitle" id="subtitle"></span>
   <div class="spacer"></div>
+  <input class="task-search" id="task-search" type="search"
+    placeholder="Search tasks…" oninput="setSearchFilter(this.value)"
+    aria-label="Search tasks">
   <select class="swimlane-select" id="swimlane-select" onchange="switchSwimlane(this.value)">
     <option value="">All</option>
   </select>
@@ -1246,6 +1263,7 @@ const PRIORITY = {
 let allTasks = [];
 let activeTab = COLUMNS[0].key;
 let activeSwimlane = '';
+let activeSearch = '';
 
 async function loadTasks() {
   try {
@@ -1266,12 +1284,30 @@ async function loadTasks() {
 
 function render(tasks) {
   updateSwimlaneSelect(tasks);
-  const filtered = activeSwimlane
+  let filtered = activeSwimlane
     ? tasks.filter(t => (t.swimlane || '') === activeSwimlane)
     : tasks;
+  const q = activeSearch.trim().toLowerCase();
+  if (q) filtered = filtered.filter(t => matchesSearch(t, q));
   renderBoard(filtered);
   renderTabs(filtered);
   applyActiveTab();
+}
+
+function matchesSearch(t, q) {
+  if ((t.title || '').toLowerCase().includes(q)) return true;
+  if ((t.body  || '').toLowerCase().includes(q)) return true;
+  if ((t.swimlane || '').toLowerCase().includes(q)) return true;
+  const tags = t.tags || [];
+  for (const tag of tags) {
+    if (String(tag).toLowerCase().includes(q)) return true;
+  }
+  return false;
+}
+
+function setSearchFilter(value) {
+  activeSearch = value || '';
+  render(allTasks);
 }
 
 function updateSwimlaneSelect(tasks) {

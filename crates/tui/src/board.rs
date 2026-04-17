@@ -13,6 +13,7 @@ pub struct BoardState {
     pub tasks: BTreeMap<Column, Vec<Task>>,
     pub swimlanes: Vec<String>,
     pub active_swimlane: Option<usize>,
+    pub search_query: String,
 }
 
 impl BoardState {
@@ -34,6 +35,7 @@ impl BoardState {
             tasks,
             swimlanes,
             active_swimlane: None,
+            search_query: String::new(),
         }
     }
 
@@ -99,8 +101,12 @@ impl BoardState {
             self.active_swimlane = None;
         }
         self.all_tasks = tasks;
-        self.tasks =
-            Self::apply_swimlane_filter(&self.all_tasks, &self.swimlanes, self.active_swimlane);
+        self.tasks = Self::apply_filters(
+            &self.all_tasks,
+            &self.swimlanes,
+            self.active_swimlane,
+            &self.search_query,
+        );
         self.clamp_selections();
     }
 
@@ -132,9 +138,57 @@ impl BoardState {
     }
 
     pub fn refilter(&mut self) {
-        self.tasks =
-            Self::apply_swimlane_filter(&self.all_tasks, &self.swimlanes, self.active_swimlane);
+        self.tasks = Self::apply_filters(
+            &self.all_tasks,
+            &self.swimlanes,
+            self.active_swimlane,
+            &self.search_query,
+        );
         self.clamp_selections();
+    }
+
+    pub fn set_search(&mut self, query: String) {
+        self.search_query = query;
+        self.refilter();
+    }
+
+    pub fn clear_search(&mut self) {
+        if !self.search_query.is_empty() {
+            self.search_query.clear();
+            self.refilter();
+        }
+    }
+
+    fn apply_filters(
+        all_tasks: &BTreeMap<Column, Vec<Task>>,
+        swimlanes: &[String],
+        active_swimlane: Option<usize>,
+        search: &str,
+    ) -> BTreeMap<Column, Vec<Task>> {
+        let swimlane_filtered = Self::apply_swimlane_filter(all_tasks, swimlanes, active_swimlane);
+        let q = search.trim().to_lowercase();
+        if q.is_empty() {
+            return swimlane_filtered;
+        }
+        let mut out = BTreeMap::new();
+        for (col, col_tasks) in swimlane_filtered {
+            let matched: Vec<Task> = col_tasks
+                .into_iter()
+                .filter(|t| Self::task_matches(t, &q))
+                .collect();
+            out.insert(col, matched);
+        }
+        out
+    }
+
+    fn task_matches(task: &Task, q: &str) -> bool {
+        task.title.to_lowercase().contains(q)
+            || task.body.to_lowercase().contains(q)
+            || task.tags.iter().any(|tag| tag.to_lowercase().contains(q))
+            || task
+                .swimlane
+                .as_deref()
+                .is_some_and(|s| s.to_lowercase().contains(q))
     }
 
     fn clamp_selections(&mut self) {

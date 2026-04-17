@@ -8,6 +8,7 @@ Claude Opus 4.7 support.
 
 ### ✨ Features
 - **Opus 4.7 (1M context) support** — `claude-opus-4-7` is now selectable from the TUI `/model` modal and the web chat dropdown; Opus 4.6 is removed and the `opus` alias transparently resolves saved `claude-opus-4-6` configs to 4.7.
+- **Live task search in TUI and web** — press `f` in the TUI board to open a live search bar (`Enter` applies, `Esc` clears, `Esc` again from board clears an active filter); the web board gains a `Search tasks…` input next to the swimlane selector. Matches title / body / tags / swimlane (case-insensitive substring) and composes with the existing swimlane filter.
 
 ### 🔧 Improvements
 - **Web chat: render GFM markdown tables** — `| h1 | h2 |` followed by a `| --- | --- |` separator now produces a styled `<table>` in chat bubbles and task modals instead of leaking the raw pipes into a paragraph; column alignment markers (`:---`, `---:`, `:---:`) are honored.

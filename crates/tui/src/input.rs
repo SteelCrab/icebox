@@ -103,8 +103,19 @@ fn handle_key(app: &mut App, key: KeyEvent) {
 }
 
 fn handle_board_key(app: &mut App, key: KeyEvent) {
+    // When the search input is active, most keys feed the query buffer.
+    if app.search_input_active {
+        handle_search_input_key(app, key);
+        return;
+    }
+
     match key.code {
         KeyCode::Char('q') => app.should_quit = true,
+
+        // Enter search input mode (find). Esc later exits and clears.
+        KeyCode::Char('f') => {
+            app.search_input_active = true;
+        }
 
         KeyCode::Char('h') | KeyCode::Left => app.board.move_focus_left(),
         KeyCode::Char('l') | KeyCode::Right => app.board.move_focus_right(),
@@ -156,6 +167,32 @@ fn handle_board_key(app: &mut App, key: KeyEvent) {
             app.bottom_chat_focused = app.bottom_chat_open;
         }
 
+        // Clear an active search filter from board mode.
+        KeyCode::Esc => app.board.clear_search(),
+
+        _ => {}
+    }
+}
+
+fn handle_search_input_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc => {
+            app.search_input_active = false;
+            app.board.clear_search();
+        }
+        KeyCode::Enter => {
+            app.search_input_active = false;
+        }
+        KeyCode::Backspace => {
+            let mut q = app.board.search_query.clone();
+            q.pop();
+            app.board.set_search(q);
+        }
+        KeyCode::Char(c) => {
+            let mut q = app.board.search_query.clone();
+            q.push(c);
+            app.board.set_search(q);
+        }
         _ => {}
     }
 }

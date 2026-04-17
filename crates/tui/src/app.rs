@@ -136,6 +136,10 @@ pub struct App {
     pub create_due_date: String,
     pub create_field: CreateField,
     pub create_priority_idx: usize,
+
+    // Search state — when `search_input_active` is true, the board shows a
+    // live search bar and most board-mode keys feed the query buffer.
+    pub search_input_active: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -292,6 +296,7 @@ impl App {
             notify_rx: None,
             notion_pages_cache: Vec::new(),
             notion_busy: None,
+            search_input_active: false,
         })
     }
 
@@ -859,6 +864,27 @@ impl App {
             return;
         }
 
+        // Search bar takes precedence over status message when active or when
+        // a query is already filtering the board.
+        if self.search_input_active || !self.board.search_query.is_empty() {
+            let cursor = if self.search_input_active { "_" } else { "" };
+            let hint = if self.search_input_active {
+                " (Enter: apply · Esc: clear)"
+            } else {
+                " (Esc: clear · f: edit)"
+            };
+            spans.push(Span::styled(
+                format!("Search: {}{cursor}", self.board.search_query),
+                Style::default()
+                    .fg(ratatui::style::Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::styled(hint, theme::dim_style()));
+            let status = Line::from(spans);
+            frame.render_widget(Paragraph::new(status), layout.status_bar);
+            return;
+        }
+
         match &self.status_message {
             Some(msg) if msg.is_error => {
                 spans.push(Span::styled(
@@ -879,7 +905,7 @@ impl App {
                     "/:chat"
                 };
                 spans.push(Span::styled(
-                    format!("q:quit h/l:col j/k:task Enter:detail n:new d:del >/<:move r:reload {chat_hint}"),
+                    format!("q:quit h/l:col j/k:task Enter:detail n:new f:search d:del >/<:move r:reload {chat_hint}"),
                     theme::dim_style(),
                 ));
             }

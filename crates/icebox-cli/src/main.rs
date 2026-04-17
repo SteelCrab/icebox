@@ -29,7 +29,7 @@ fn main() -> Result<()> {
         Some("init") => return run_init(&args),
         Some("mcp") => return run_mcp(&args),
         Some("web") => return run_web(&args),
-        Some("upgrade") => return upgrade::run(),
+        Some("upgrade" | "update") => return upgrade::run(),
         Some("help") | Some("--help") | Some("-h") => {
             print_help();
             return Ok(());
@@ -63,7 +63,9 @@ fn print_help() {
     println!("  icebox logout         Clear saved credentials");
     println!("  icebox whoami         Show current authentication status");
     println!("  icebox mcp            Start MCP server (stdio, for Claude Code)");
-    println!("  icebox upgrade        Self-update from latest GitHub release");
+    println!(
+        "  icebox upgrade        Self-update from latest GitHub release (alias: update)"
+    );
     println!("  icebox help           Show this help message");
     println!();
     println!("AUTHENTICATION (recommended: API key):");
@@ -77,6 +79,8 @@ fn print_help() {
         icebox_runtime::DEFAULT_OAUTH_MODEL
     );
     println!("  ICEBOX_CONFIG_HOME  Config directory (default: ~/.icebox)");
+    println!("  GITHUB_TOKEN        Optional: raises `icebox upgrade` GitHub API limit");
+    println!("                      from 60 to 5000 req/hour (also accepts GH_TOKEN)");
 }
 
 // ── Login ──

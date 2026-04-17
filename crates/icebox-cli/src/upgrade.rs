@@ -5,6 +5,15 @@ const REPO_OWNER: &str = "SteelCrab";
 const REPO_NAME: &str = "icebox";
 const BIN_NAME: &str = "icebox";
 
+/// Return a GitHub token from `GITHUB_TOKEN` or `GH_TOKEN` when set, so that
+/// `self_update`'s API calls are authenticated (5000 req/hour instead of 60).
+fn github_token() -> Option<String> {
+    std::env::var("GITHUB_TOKEN")
+        .ok()
+        .or_else(|| std::env::var("GH_TOKEN").ok())
+        .filter(|s| !s.is_empty())
+}
+
 // ── Version check (background, cached 24h) ──
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -55,13 +64,12 @@ fn is_newer(latest: &str, current: &str) -> bool {
 }
 
 fn fetch_latest_version() -> Option<String> {
-    let releases = self_update::backends::github::ReleaseList::configure()
-        .repo_owner(REPO_OWNER)
-        .repo_name(REPO_NAME)
-        .build()
-        .ok()?
-        .fetch()
-        .ok()?;
+    let mut builder = self_update::backends::github::ReleaseList::configure();
+    builder.repo_owner(REPO_OWNER).repo_name(REPO_NAME);
+    if let Some(token) = github_token() {
+        builder.auth_token(&token);
+    }
+    let releases = builder.build().ok()?.fetch().ok()?;
     releases.first().map(|r| r.version.clone())
 }
 
@@ -167,7 +175,8 @@ pub fn run() -> Result<()> {
     println!("  Checking GitHub for latest release…");
     println!();
 
-    let updater = self_update::backends::github::Update::configure()
+    let mut builder = self_update::backends::github::Update::configure();
+    builder
         .repo_owner(REPO_OWNER)
         .repo_name(REPO_NAME)
         .bin_name(BIN_NAME)
@@ -176,13 +185,26 @@ pub fn run() -> Result<()> {
         // Skip self_update's own [Y/n] prompt — we already asked the user
         // via prompt_and_upgrade_if_available(), and on Windows PowerShell
         // the inner prompt can lose stdin echo and appear unresponsive.
-        .no_confirm(true)
-        .build()
-        .context("failed to configure self-update")?;
+        .no_confirm(true);
+    if let Some(token) = github_token() {
+        builder.auth_token(&token);
+    }
+    let updater = builder.build().context("failed to configure self-update")?;
 
-    let status = updater
-        .update()
-        .context("failed to apply update — try downloading manually from GitHub releases")?;
+    let status = updater.update().map_err(|e| {
+        let msg = e.to_string();
+        if msg.contains("403") {
+            anyhow::anyhow!(
+                "GitHub API returned 403 — likely rate-limited (60 req/hour without auth). \
+                 Set GITHUB_TOKEN (or GH_TOKEN) to raise the limit to 5000 req/hour, \
+                 or wait a few minutes and retry.\n  Underlying error: {msg}"
+            )
+        } else {
+            anyhow::anyhow!(
+                "failed to apply update — try downloading manually from GitHub releases: {msg}"
+            )
+        }
+    })?;
 
     println!();
     if status.updated() {
